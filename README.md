@@ -6,14 +6,15 @@
 
 ## 단계와 범위
 
-1. **1차 인프라 설치:** Shared VPC, 서브넷, GKE Autopilot, IAM, Private Endpoint, Kubeconfig 준비 (이번 범위)
-2. **2차 연동 검증:** Artifact Registry Pull, Filestore NFS Mount, .oefj/BigQuery SELECT (실제 환경 테스트 허용 시)
+1. **1차 인프라 설치:** Shared VPC, 서브넷, GKE Autopilot, IAM, Private Endpoint, Kubeconfig 준비 + **VM NFS Mount와 /mnt 경로 조회** (이번 범위)
+2. **2차 연동 검증:** GKE **Pod**에서 Artifact Registry Pull, Filestore NFS Mount, .oefj/BigQuery SELECT (실제 환경 테스트 허용 시)
 3. **3차 단일 업무 검증:** GP_L2RSVP_001_1 → run-gke.sh → client-gke-auto 직접 호출 (별도 승인)
 4. **4차 전체 전환:** 30개 과제 및 공통 client_gke 링크 절체 (3차 검증 후 별도 승인)
 
 ## 문서
 
 - **[00. 1차 인프라 설치계획(외부 개발환경 테스트 기준)](docs/00-PHASE1-INFRA-INSTALL.md)**
+- **[04. VM NFS 마운트 및 /mnt 경로 적용](docs/04-VM-NFS-MOUNT.md)**
 - [01. GKE Autopilot 설치 및 구성 명령](docs/01-GKE-CLUSTER.md)
 - [02. 후속 단계 RSVP 단일 과제 실행/전환/원복 RUNBOOK](docs/02-RSVP-CUTOVER.md)
 - [운영 입력값 불일치 확인표](docs/03-OPERATING-INPUT-AUDIT.md)
@@ -34,6 +35,9 @@
 | Release Channel | regular |
 | AR Project | gcp-prod-edp-hub-vpchost |
 | 관리 VM (클러스터 접속) | 172.32.10.2 |
+| 1차 VM NFS Mount 위치 | `/mnt/batch_gke` (실제 NFS Export 확인 후) |
+| VM RSVP 폴더 | `/mnt/batch_gke/l2/rsvp` |
+| Pod NFS 검증 | 1차 수행 불가, 2차 보류 |
 | GKE 1차 설치 실행 계정 | user01@sonmap.net |
 | RSVP 업무 실행 | 3차 이후 별도 승인 |
 | 관리자 IAM 변경 계정 | admin@sonmap.net (별도, 필요할 때만) |
@@ -45,11 +49,23 @@
 
 - 첨부 운영 설정에 나온 Node 10.253.0.0/28은 **16개 IP(사용 가능 12개)**로, 기존 설명의 128개는 오류입니다. 주소 충돌·확장성 및 노드 용량 검증이 필요합니다.
 - Pod CIDR은 10.253.1.0/24, CP CIDR은 10.253.2.0/28로 기록되어 있습니다. 실제 생성 전에 IP 승인 여부를 확인하십시오.
-- 운영 자료에는 Filestore 서버가 172.32.10.2로 출력되지만 같은 주소가 관리 VM이라고 명시되어 있습니다. **정확한 NFS 서버 IP 확정 전에는 NFS 단위 테스트 배포 금지**.
+- 운영 자료에는 Filestore 서버가 172.32.10.2로 출력되지만 같은 주소가 관리 VM이라고 명시되어 있습니다. **정확한 NFS 서버 IP 확인 전에는 VM에서도 임의 NFS 마운트 금지**. VM의 기존 NFS 연결 조회는 가능합니다.
 - AR 테스트 변수의 1a751e99d693:v1와 운영 로그의 python-bq-batch:v1가 다르므로 실제 이미지 경로/태그 조회 후 적용.
 - 실제 RSVP 업무 컨테이너 이미지와 인자 형식은 운영 VM의 run-gke.sh를 조회해 확정합니다.
 - 이전 실행 로그의 python-bq-batch:v1는 인증 스모크 테스트 이미지이며 실제 RSVP 업무 이미지와 혼동하지 않습니다.
 - 기존 Python config.py 중 일부는 /home/jupyter/.oef를 사용합니다. 신규 스모크는 /home/jupyter/.oefj를 기본으로 하며 반드시 실경로를 확인합니다.
+
+## 1차 VM NFS 경로 점검
+
+실제 GKE Pod NFS Mount는 검증할 수 없으므로, **VM에 연결된 NFS의 마운트 지점과 파일 경로부터 확인**합니다. 기본 구조는 NFS `/batch_gke` → VM `/mnt/batch_gke`이며, `/mnt/batch_gke/l2/rsvp` 및 `/mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh` 경로를 조사합니다. .oefj는 존재·권한만 확인하고 키는 읽거나 업로드하지 않습니다.
+
+~~~bash
+findmnt -t nfs,nfs4 -o TARGET,SOURCE,FSTYPE,OPTIONS
+findmnt -T /mnt/batch_gke -o TARGET,SOURCE,FSTYPE,OPTIONS
+ls -ld /mnt/batch_gke/l2/rsvp 2>&1 || true
+~~~
+
+신규 NFS 마운트는 실제 서버·Export 승인 후 임시 read-only 검사부터 수행하며, **VM에서 성공해도 GKE Pod 접근 성공으로 판정하지 않습니다**. 상세 명령은 [04. VM NFS 가이드](docs/04-VM-NFS-MOUNT.md)에 수록했습니다.
 
 ## 실행 계정 통일
 
