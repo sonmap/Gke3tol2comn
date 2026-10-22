@@ -58,6 +58,8 @@ echo "SVC_PROJECT_NUM=$SVC_PROJECT_NUM"
 - Services: 최신 Autopilot은 기본적으로 GKE 관리 대역 34.118.224.0/20 사용 가능. 네트워크 정책상 직접 지정해야 한다면 별도 Services Secondary 범위도 승인 후 설정.
 - 기존 서브넷이 있으면 **재생성 금지**. 현재 대역과 네트워크 연결부터 확인.
 
+먼저  4. Host Project 서브넷 (신규 필요할 때만)   실행향,   ##2 가 오류 없다.
+
 ## 2. 현재 설정 및 GKE 프로젝트 검증 (읽기 전용)
 
 ~~~bash
