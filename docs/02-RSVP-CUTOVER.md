@@ -110,8 +110,12 @@ export NFS_EXPORT="/batch_gke/l2/rsvp"
 export TEST_IMAGE="asia-northeast3-docker.pkg.dev/gcp-prod-edp-hub-vpchost/ar-l2comm-python/python-bq-batch:v1"
 export KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
 
-# 실제 NFS 서버 주소를 확인하기 전에는 적용 금지
-test "$FILESTORE_IP" != "172.32.10.2" || { echo '관리 VM IP와 NFS 서버 로그 값 동일: 담당자 확인 필요'; exit 1; }
+# 운영 담당자가 실제 NFS 서버를 검증한 후에만 표시. 주소가 관리 VM과 같아도
+# 해당 VM에서 NFS를 실제로 제공하는지 확인되면 승인 가능.
+export NFS_IP_VERIFIED="no"
+# 네트워크/스토리지 담당 확인 후 위 값을 yes로 변경
+test "$NFS_IP_VERIFIED" = "yes" || { echo 'NFS IP 미확정: 배포 중단'; exit 1; }
+test "$FILESTORE_IP" != "CONFIRM_REAL_FILESTORE_IP" || exit 1
 envsubst < tests/rsvp-smoke.yaml.template > /tmp/rsvp-smoke.yaml
 kubectl apply --dry-run=server -f /tmp/rsvp-smoke.yaml
 # 검토 및 승인 후에만:
