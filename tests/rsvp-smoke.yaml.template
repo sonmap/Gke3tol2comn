@@ -1,14 +1,17 @@
 # Reviewer note: envsubst renders FILESTORE_IP, NFS_EXPORT, TEST_IMAGE.
-# For FIRST RSVP smoke only; do not apply until variables are approved.
+# 2026-10-22 attached example: RSVP, 20Gi ROX, CPU 4 / Memory 16Gi / GPU 0.
+# For FIRST RSVP smoke only; confirm NFS_SERVER is a genuine Filestore IP, NOT MGMT VM.
+# Test NFS export must contain GP_L2RSVP_001_1/python/sample_bq.py and .oefj.
+# Do not apply until image exists and FILESTORE_IP + NFS_EXPORT are approved.
 apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: pv-rsvp-bq-smoke
 spec:
   capacity:
-    storage: 100Gi
+    storage: 20Gi
   accessModes:
-    - ReadWriteMany
+    - ReadOnlyMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ""
   nfs:
@@ -23,12 +26,12 @@ metadata:
   namespace: l2comm-batch
 spec:
   accessModes:
-    - ReadWriteMany
+    - ReadOnlyMany
   volumeName: pv-rsvp-bq-smoke
   storageClassName: ""
   resources:
     requests:
-      storage: 100Gi
+      storage: 20Gi
 ---
 apiVersion: v1
 kind: Pod
@@ -57,11 +60,11 @@ spec:
           value: "1"
       resources:
         requests:
-          cpu: "1"
-          memory: "2Gi"
+          cpu: "4"
+          memory: "16Gi"
         limits:
-          cpu: "1"
-          memory: "2Gi"
+          cpu: "4"
+          memory: "16Gi"
       volumeMounts:
         - name: rsvp-share
           mountPath: /home/jupyter
