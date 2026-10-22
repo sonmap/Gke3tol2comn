@@ -9,12 +9,12 @@
 
 | 단계 | 범위 | 이번 작업 |
 |---|---|---|
-| **1차 인프라 설치** | Shared VPC, Node/Pod/CP IP, API/IAM, GKE Autopilot 설치, Private Endpoint, Kubeconfig, AR/Filestore 사전 설정 | **대상** |
-| 2차 시스템 연동 테스트 | AR Pull, Filestore NFS Mount, SA JSON Key 및 BigQuery SELECT 검증 | 후속 |
+| **1차 인프라 설치** | Shared VPC, Node/Pod/CP IP, API/IAM, GKE 설치, Kubeconfig, AR/Filestore 정책 준비 + **VM에서 NFS 및 /mnt 경로 확인** | **대상** |
+| 2차 시스템 연동 테스트 | GKE **Pod에서** AR Pull, Filestore PV/PVC/NFS Mount, SA JSON Key 및 BigQuery SELECT 검증 | 후속 |
 | 3차 RSVP 단일 과제 시험 | GP_L2RSVP_001_1 run-gke.sh → client-gke-auto, Pod 결과 대조 | 후속 |
 | 4차 전체 전환 | 30개 과제, 공통 심볼릭 링크, Cron 순차 절체/원복 | 후속 |
 
-1차 제외: 실제 RSVP Pod 실행, 운영 BigQuery 조회, 운영 Cron 변경, 기존 client_gke 공통 링크 변경, .oefj 파일 복사·삭제, 운영 30개 업무 전환.
+1차 제외: **GKE Pod에서의** NFS Mount 검증, 실제 RSVP Pod 실행, 운영 BigQuery 조회, 운영 Cron 변경, 기존 client_gke 공통 링크 변경, .oefj 파일 복사·삭제, 운영 30개 업무 전환. VM에서 NFS 연결 및 /mnt 경로 조회는 가능한 범위에서 1차 점검 항목에 추가합니다.
 
 ## 2. 외부 개발환경 검증 결과 활용
 
@@ -62,10 +62,10 @@
 | 5 | GKE Autopilot 생성 | user01 (승인 후) | Cluster RUNNING/Autopilot enabled |
 | 6 | 관리접속 및 Kubeconfig 준비 | user01 | Context·Private Endpoint 구성 기록 |
 | 7 | AR 연동 설정 준비 | AR 담당 | Node SA Reader/이미지명 확인 |
-| 8 | Filestore 접속 정책 준비 | 네트워크·NFS 담당 | NFS 실제 서버 IP, 프로토콜, FW 검토 |
+| 8 | Filestore 접속 정책 준비 + **VM NFS /mnt 점검** | 네트워크·NFS·Linux 담당 | NFS 서버 IP, VM Export·마운트 위치, `findmnt` 결과, RSVP 경로 존재 확인. **GKE Pod Mount 미실행** |
 | 9 | 1차 설치 보고 | 플랫폼 담당 | 리소스 목록·차단 이슈·후속 테스트 계획 |
 
-**설치 완료 기준:** 실제 설치 작업을 실행하여 GKE 및 Shared VPC 관련 자원이 생성/설정되었고 describe 조회로 확인되었을 때. 사용자 업무 Pod/BQ/Filestore 연동 성공은 1차 완료 기준에 포함하지 않습니다. 지금은 계획서 작성 및 GitHub 수정만 수행했으므로 설치 완료 상태가 아닙니다.
+**설치 완료 기준:** 실제 설치 작업을 실행하여 GKE 및 Shared VPC 관련 자원이 생성/설정되었고 describe 조회로 확인되었을 때. VM NFS 마운트 확인은 가능한 경우 **별도 준비 증적**으로 기재합니다. **VM NFS 접속 성공만으로 GKE Filestore 연동을 검증한 것으로 판정하지 않습니다.** 사용자 업무 Pod/BQ/Filestore의 Pod 연동 성공은 1차 완료 기준에서 제외합니다. 현재는 문서 수정만 수행했으므로 설치 완료 상태가 아닙니다.
 
 ## 5. GCP 명령 — 설치 작업 승인 후 참고용
 
@@ -136,29 +136,51 @@ kubectl config current-context
 
 Kubeconfig 발급 자체와 실제 Kubernetes API/Pod 연동 검증은 서로 다른 단계입니다. 접속이 막혀 있으면 미검증 사항으로 기록합니다.
 
-## 6. 1차 설치 보고와 후속 검증 분리
+## 6. 1차 VM NFS 마운트 및 /mnt 경로 확인 (GKE Pod 검증 불가)
+
+기존 Filestore/방화벽/PV/PVC 설계를 삭제하지 않습니다. **관리 VM에서만** 실제 NFS 서버 및 Export 확인 후 `/mnt/batch_gke` 경로를 검증합니다.
+
+| 위치 | VM에서 확인할 경로 |
+|---|---|
+| NFS 루트 Mount | `/batch_gke` → `/mnt/batch_gke` (서버 Export 허용 시) |
+| RSVP 업무 | `/mnt/batch_gke/l2/rsvp/GP_L2RSVP_001_1/python` |
+| SA Key 존재·권한 | `/mnt/batch_gke/l2/rsvp/.oefj` (키 내용 조회·수정 불가) |
+| run-gke.sh | `/mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh` (Export에 있는지 확인) |
+
+~~~bash
+# VM의 실제 NFS Mount 여부 조사 (변경 없음)
+findmnt -t nfs,nfs4 -o TARGET,SOURCE,FSTYPE,OPTIONS
+mountpoint /mnt/batch_gke
+ls -ld /mnt/batch_gke/l2/rsvp 2>&1 || true
+~~~
+
+VM에 NFS가 없는 경우 임시 **읽기 전용 마운트부터** 점검하며, 이미 존재하는 `/mnt` 파일들을 가리는 신규 mount는 하지 않습니다. 실제 주소가 확인되지 않은 NFS 서버를 관리 VM IP로 가정하지 않습니다.
+
+**세부 설치/진단 명령: [04. VM NFS 마운트 및 /mnt 경로 적용](04-VM-NFS-MOUNT.md)**
+
+## 7. 1차 설치 보고와 후속 검증 분리
 
 | 구분 | 1차 설치 보고에 넣을 수 있는 값 | 넣지 말아야 할 주장 |
 |---|---|---|
 | GKE | 실제 생성 후 Cluster ID/설정/Status | 배치가 운영과 동일하게 동작함 |
-| Network | 실제 VPC·서브넷·IP·IAM 반영 기록 | 실제 NFS Mount 성공 |
+| Network | 실제 VPC·서브넷·IP·IAM 및 **VM에서 NFS 연결을 확인했다면 그 증적** | **GKE Pod**에서 NFS Mount 성공 |
 | AR | 권한 부여·이미지 식별 확인 | Pod의 AR Pull 성공 |
 | BQ | 필요 인증 방식 및 역할 정리 | 실제 BigQuery SQL 성공 |
 | RSVP | 외부 개발환경 테스트 내용 참고 | 실제 환경 RSVP 실행 성공 |
 
-1차 설치 산출물: 구성표, 설치/변경 명령 실행 내역, 클러스터/네트워크 조회 결과, 권한 부여 명세, 후속 테스트 승인 요청서 및 미해결 항목.
+1차 설치 산출물: 구성표, 설치/변경 명령 실행 내역, 클러스터/네트워크 조회 결과, 권한 부여 명세, **VM NFS 및 /mnt 경로 점검 결과(가능할 때만)**, 후속 테스트 승인 요청서 및 미해결 항목.
 
-## 7. 중요 위험
+## 8. 중요 위험
 
-- Filestore IP: 이전 출력에는 NFS_SERVER와 MGMT_VM_IP가 모두 172.32.10.2로 기록됨. NFS 관리자에게 실제 Export 주소 확인.
+- Filestore IP: 이전 출력에는 NFS_SERVER와 MGMT_VM_IP가 모두 172.32.10.2로 기록됨. NFS 관리자에게 실제 Export 주소 확인. **1차 VM 마운트 성공은 GKE Pod NFS 검증 성공을 의미하지 않음**.
 - AR: 1a751e99d693:v1와 python-bq-batch:v1 불일치. 실제 이미지명·다이제스트 및 RSVP 업무 이미지 확정.
 - Pod IP /24: Autopilot 확장성 불충분 가능성. 실제 노드별 할당/Workload 규모 기준 검토.
 - Private Endpoint: TCP443, 승인 CIDR, IAM/RBAC를 별개로 검토. 보안 제한 자동 해제 금지.
 - 키: .oef/.oefj, kubeconfig를 GitHub에 포함하지 않음.
 - 운영 영향: Cron과 /ssw/dlk/client_gke 공통 심볼릭 링크는 1차에서 절대 변경하지 않음.
 
-## 8. 완료보고 문구 (설치 실제 완료 후에만 사용)
+## 9. 완료보고 문구 (설치 실제 완료 후에만 사용)
 
-외부 개발환경의 GKE Autopilot 및 RSVP 배치 테스트 결과를 참고하여 신규 환경의 Shared VPC 및 GKE Autopilot 1차 인프라 설치를 수행하였습니다. 실제 대상 환경의 AR Pull, Filestore Mount, BigQuery 인증/조회, RSVP 업무 실행 검증은 별도 승인 후 2~3차 단계에서 수행할 예정입니다.
+외부 개발환경의 GKE Autopilot 및 RSVP 배치 테스트 결과를 참고하여 신규 환경의 Shared VPC 및 GKE Autopilot 1차 인프라 설치를 수행하였습니다. VM 환경에서 NFS 접근 및 /mnt 경로를 확인하는 항목은 1차에 별도로 추가하였으며, 실제 GKE Pod의 AR Pull·Filestore Mount 및 BigQuery 인증/조회, RSVP 업무 실행 검증은 별도 승인 후 2~3차 단계에서 수행할 예정입니다.
 
 **현재 상태:** 위 문구는 향후 완료보고 예시입니다. 실제 대상 환경에 대한 설치·접속·업무 테스트 결과는 아직 확인되지 않았습니다.
