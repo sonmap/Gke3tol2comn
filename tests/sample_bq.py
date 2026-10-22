@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """RSVP GKE Autopilot pre-cutover read-only BigQuery smoke test.
 
+- Used only in phase 2 integration validation, not phase 1 infrastructure installation.
 - Uses existing mounted service-account JSON key; never prints key contents.
 - Exit 0: job succeeded. Exit 1: auth/query failure.
 - Does not mutate any production BigQuery objects.
