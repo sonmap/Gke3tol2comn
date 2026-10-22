@@ -1,6 +1,6 @@
 # 03. 2026-10-22 운영 입력값 대조표
 
-이 문서는 사용자가 제공한 Pasted text(20261022-100920).txt를 기준으로 작성했습니다.
+이 문서는 사용자가 제공한 Pasted text(20261022-100920).txt를 기준으로 작성했으며, 이후 변경 지시에 따라 실행 계정을 `chomap@sonmap.net`에서 **`user01@sonmap.net`**으로 수정했습니다.
 문서 작성만 진행했으며 GCP 자원 생성·변경 또는 운영 배치 실행은 수행하지 않았습니다.
 
 ## 1. 원본 설정표
@@ -20,7 +20,7 @@
 | RELEASE_CHANNEL | regular | stable에서 변경 |
 | CLUSTER | gkea-prod-l2comn-batch | 존재 시 describe |
 | MGMT_VM_IP | 172.32.10.2 | 관리 VM |
-| EXEC_ACCOUNT | chomap@sonmap.net | 로그인·권한 확인 |
+| EXEC_ACCOUNT | user01@sonmap.net | 2026-10-22 변경 요청: GKE 생성·조회·RSVP 실행 계정 |
 | ADMIN_ACCOUNT | admin@sonmap.net | IAM 변경 주체 |
 | Node SA | SVC_PROJECT_NUM-compute@developer.gserviceaccount.com | 실제 사용 SA 확인 |
 
@@ -56,6 +56,16 @@
 | 중요 | 예전 테스트 YAML은 100Gi RWX, 이번 로그는 20Gi ROX | 현재 템플릿 20Gi ROX로 보정하되 실제 NFS export 권한 확인 |
 
 ## 4. 현장 검증 명령 (읽기 전용)
+
+**명령은 `user01@sonmap.net`으로 실행합니다.** 자료의 `admin@sonmap.net`은 IAM 변경 관리자 계정이며 RSVP 시험 실행에는 사용하지 않습니다.
+
+~~~bash
+gcloud auth list
+gcloud config set account user01@sonmap.net
+gcloud config get-value account
+~~~
+
+과거 로그의 `/home/admin_sonmap_net/.kube/config_l2comn-autopilot`은 당시 Linux 실행자의 위치를 나타냅니다. 이번 변경 이후에는 현재 로그인한 OS 사용자의 `$HOME/.kube/config_l2comn-autopilot`을 사용하며, 별도로 생성한 신규 Kubeconfig를 확인합니다.
 
 ~~~bash
 gcloud container clusters describe gkea-prod-l2comn-batch \
