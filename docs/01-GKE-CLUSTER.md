@@ -1,6 +1,15 @@
-# 01. GKE Autopilot 생성 및 기반 구성 점검
+# 01. 1차 인프라 설치 — GKE Autopilot 생성 및 기반 구성
 
-**단계:** 1차 RSVP 단일 과제 PoC. 이 문서는 실행 승인 전 검토본이며 명령이 자동 실행되지 않습니다.
+**단계:** 1차 인프라 설치. 외부 개발환경 RSVP 시험 결과를 근거로 구성한 **설치 작업 절차서**입니다. 실제 대상 환경에서 업무 Pod, AR Pull, Filestore NFS Mount, BQ 인증·조회 시험은 이번 단계에서 수행하지 않습니다. 명령은 GCP 운영 담당자가 승인 후 실행합니다.
+
+## 1차 작업의 설치 완료 기준과 테스트 보류
+
+- **설치:** Shared VPC 및 Node/Pod/CP Subnet 승인·설정, Service Project API 및 IAM, GKE Autopilot 생성, Private Endpoint 및 kubeconfig(가능한 범위), AR/NFS 정책 사전 준비.
+- **설치 증적:** 프로젝트/서브넷/클러스터 describe 출력, IAM 바인딩/연결 구성 기록, GKE RUNNING 확인.
+- **후속 시험:** 컨테이너 이미지 Pull, PV/PVC Bound, NFS 실제 Mount, BQ SELECT, RSVP Pod Succeeded는 **2~3차**로 분리합니다.
+- **외부 개발환경 참고:** 제공 자료에는 PV/PVC/Pod 생성, Pending→Running→Succeeded 및 리소스 삭제 예시가 있으나 대상 인프라의 검증 결과로 기재하지 않습니다.
+
+상세 단계 및 승인 조건은 [00-PHASE1-INFRA-INSTALL.md](00-PHASE1-INFRA-INSTALL.md) 참조.
 
 ## 운영 입력값과 검증 보류
 
@@ -186,9 +195,9 @@ kubectl get pods -A --request-timeout=15s
 
 Kubeconfig는 사용자별 파일이며 소스 저장소 커밋 금지. 연결 실패 시 Endpoint TCP443 도달성 → 인증 플러그인/로그인 → IAM/RBAC 순서로 분리 점검.
 
-## 7. Artifact Registry 권한 및 Pull
+## 7. Artifact Registry 연동 사전 준비 (실제 Pull은 2차)
 
-이전 스모크 테스트 참고용 이미지:
+외부 개발환경 스모크 테스트의 참고 이미지입니다. 이 단계에서는 실제 대상 환경 Pod Pull을 실행하지 않습니다:
 
 ~~~bash
 export TEST_IMAGE="asia-northeast3-docker.pkg.dev/gcp-prod-edp-hub-vpchost/ar-l2comm-python/python-bq-batch:v1"  # 로그상의 이미지. 1a751e99d693:v1와 대조 필수
@@ -209,7 +218,7 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 **Node SA의 이미지 Pull 권한과 Pod 내부 .oefj BigQuery 권한은 서로 다릅니다.**
 업무 이미지가 다른 AR 또는 dlk-lguplus-deeplearing-Tags에 있다면 이 명령의 대상 리포지토리를 실제 이름으로 변경.
 
-## 8. Filestore NFS 검증
+## 8. Filestore 접근 정책 사전 준비 (실제 NFS Mount는 2차)
 
 - 운영 자료에는 NFS_PATH=/batch_gke/l2/rsvp, Pod 마운트=/home/jupyter로 기록되어 있습니다.
 - NFS_SERVER는 실행 로그상 `172.32.10.2`이나 이 주소가 MGMT_VM_IP에도 쓰여 있으므로 Filestore 담당자에게 실제 서버 IP를 필수 재확인. 검증 없이 NFS_SERVER를 MGMT_VM_IP로 대체하지 않음.
@@ -223,23 +232,23 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 ls -ld /mnt/batch_gke/l2/rsvp
 find /mnt/batch_gke/l2/rsvp -maxdepth 1 -name '.oef*' -printf '%f %m %u:%g\n'
 
-# Pod 생성 후:
-kubectl describe pod <POD_NAME> -n l2comm-batch
-kubectl get pv,pvc -A
+# 2차 시스템 테스트 승인 후(1차 설치 단계에서 실행하지 않음):
+# kubectl describe pod <POD_NAME> -n l2comm-batch
+# kubectl get pv,pvc -A
 ~~~
 
 Filestore 연결 장애는 Pod Events의 FailedMount, timeout, permission denied로 구분.
 
-## 9. 완료조건
+## 9. 1차 인프라 설치 완료조건 (실제 업무 검증 제외)
 
 | 항목 | Go 조건 |
 |---|---|
 | 클러스터 | RUNNING, Autopilot enabled |
 | Kubeconfig | Private Endpoint 대상, kubectl 연결 성공 |
-| AR | 실제 RSVP Image Pull 완료 (ErrImagePull 없음) |
-| Filestore | PVC Bound, /home/jupyter mount 성공 |
-| BQ | .oefj 읽힘, Service Account로 읽기 전용 SELECT 완료 |
-| 자원 | 테스트 종료 뒤 불필요한 Pod/PVC/PV 정리 |
+| AR | 실제 AR Repository IAM 정책·이미지 식별 등 **연동 준비** |
+| Filestore | 올바른 NFS 서버/프로토콜/소스 IP와 방화벽 정책 **연동 준비** |
+| BQ | SA JSON 키 위치·필요 권한 정리, **실제 SQL 테스트 제외** |
+| Pod | 실제 배포/삭제 미수행 (2~3차 예정) |
 | 운영 | 기존 Cron 및 GKE Standard 유지 |
 
 참고: https://docs.cloud.google.com/kubernetes-engine/docs/how-to/cluster-shared-vpc
