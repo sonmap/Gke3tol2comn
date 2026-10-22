@@ -7,7 +7,7 @@
 | 항목 | 설정/확인 |
 |---|---|
 | 과제 ID | GP_L2RSVP_001_1 |
-| Cron/VM | 실제 VM과 실행 계정 확인 |
+| Cron/VM | 실제 VM/Linux 사용자 확인, GCP 실행 계정은 user01@sonmap.net |
 | 실행 스크립트 | /mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh |
 | 기존 실행 클라이언트 | /ssw/dlk/client_gke (Bash) |
 | 신규 검증용 클라이언트 | /ssw/dlk/client-gke-auto (신규 복제/수정) |
@@ -39,7 +39,14 @@
 
 ## 1. 실행 VM에서 원본 조사 (읽기 전용)
 
+GKE 접근과 RSVP 1차 검증의 **실제 gcloud 실행 계정은 `user01@sonmap.net`**입니다. IAM 변경은 승인된 관리자 계정이 별도 수행하며, 테스트 중 `admin@sonmap.net`으로 바꾸어 실행하지 않습니다. 이전 실행 로그의 Linux 계정 경로는 역사적 증적이므로 유지합니다.
+
 ~~~bash
+export EXEC_ACCOUNT="user01@sonmap.net"
+gcloud auth list
+gcloud config set account "$EXEC_ACCOUNT"
+test "$(gcloud config get-value account 2>/dev/null)" = "$EXEC_ACCOUNT" || exit 1
+
 export RUN_SCRIPT="/mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh"
 export CLIENT_AUTO="/ssw/dlk/client-gke-auto"
 export KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
@@ -224,7 +231,8 @@ readlink -f client_gke
 
 | 항목 | 첨부 로그 값 |
 |---|---|
-| KUBECONFIG | /home/admin_sonmap_net/.kube/config_l2comn-autopilot |
+| KUBECONFIG (과거 첨부 로그) | /home/admin_sonmap_net/.kube/config_l2comn-autopilot |
+| 이번 실행 사용자 | user01@sonmap.net (Kubeconfig는 현재 Linux 사용자의 $HOME 기준) |
 | NAMESPACE | l2comm-batch |
 | KSA | ksa-l2comm-batch |
 | 이미지 | asia-northeast3-docker.pkg.dev/gcp-prod-edp-hub-vpchost/ar-l2comm-python/python-bq-batch:v1 |
