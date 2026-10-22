@@ -1,6 +1,7 @@
 # Reviewer note: envsubst renders FILESTORE_IP, NFS_EXPORT, TEST_IMAGE.
 # 2026-10-22 attached example: RSVP, 20Gi ROX, CPU 4 / Memory 16Gi / GPU 0.
-# For FIRST RSVP smoke only; confirm NFS_SERVER is a genuine Filestore IP, NOT MGMT VM.
+# Reserved for phase 2 system integration smoke test, NOT phase 1 infrastructure installation.
+# Confirm NFS_SERVER is a genuine Filestore IP, not an unverified management VM address.
 # Test NFS export must contain GP_L2RSVP_001_1/python/sample_bq.py and .oefj.
 # Do not apply until image exists and FILESTORE_IP + NFS_EXPORT are approved.
 apiVersion: v1
