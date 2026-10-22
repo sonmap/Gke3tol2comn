@@ -26,10 +26,15 @@ export RELEASE_CHANNEL="regular"
 export NODE_CIDR="10.253.0.0/28" # 총 16개, Primary 사용 가능 12개
 export CP_CIDR="10.253.2.0/28"
 export POD_CIDR="10.253.1.0/24" # Pod Secondary 총 256개
+# GKE 생성·검증 및 RSVP 테스트는 user01@sonmap.net으로 수행
+export EXEC_ACCOUNT="user01@sonmap.net"
+export ADMIN_ACCOUNT="admin@sonmap.net"  # IAM 부여 등 관리자 승인 작업 전용
+gcloud auth list
+gcloud config set account "$EXEC_ACCOUNT"
+test "$(gcloud config get-value account 2>/dev/null)" = "$EXEC_ACCOUNT" || exit 1
+
 export SVC_PROJECT_NUM="$(gcloud projects describe "$SVC_PROJECT" --format='value(projectNumber)')"
 export NODE_SA="$SVC_PROJECT_NUM-compute@developer.gserviceaccount.com"
-export EXEC_ACCOUNT="chomap@sonmap.net"
-export ADMIN_ACCOUNT="admin@sonmap.net"
 export MGMT_VM_IP="172.32.10.2"
 export GKE_AGENT="service-$SVC_PROJECT_NUM@container-engine-robot.iam.gserviceaccount.com"
 
@@ -59,6 +64,8 @@ gcloud container subnets list-usable --project="$SVC_PROJECT" --network-project=
 
 ## 3. API · Shared VPC 권한 (담당자별 작업)
 
+**실제 GKE 실행 계정은 `user01@sonmap.net`**입니다. API 활성화·네트워크 및 IAM 수정은 필요 권한을 가진 담당자만 수행합니다. `admin@sonmap.net`은 권한 부여 등 관리자 작업에만 사용하는 별도 계정이며, GKE 테스트 실행 주체로 대체하지 않습니다. 사용자 계정 및 Node Service Account·GKE Service Agent는 서로 다른 주체입니다.
+
 승인 권한을 가진 담당자가 다음 API가 활성화되었는지 확인한 뒤, 비활성일 경우에만 실행.
 
 ~~~bash
@@ -76,7 +83,7 @@ gcloud beta services identity create --service=container.googleapis.com --projec
 | Node SA | Service Project | roles/container.defaultNodeServiceAccount 등 | 노드 기본 동작 |
 | Node SA | 실제 Edge AR 리포지토리 | roles/artifactregistry.reader | 이미지 Pull |
 
-IAM 수정 명령 예시 (Host Project 보안 담당자만, 현행 바인딩 먼저 확인):
+IAM 수정 명령 예시 (Host Project 보안 담당자만, 현행 바인딩 먼저 확인). 관리자 계정으로 변경한 경우 끝나고 user01으로 복귀:
 
 ~~~bash
 gcloud projects add-iam-policy-binding "$HOST_PROJECT" \
@@ -90,6 +97,14 @@ gcloud compute networks subnets add-iam-policy-binding "$NODE_SUBNET" \
 ~~~
 
 CP 서브넷도 별도 권한 검토. 별도 Google APIs Service Agent가 필요할 경우 해당 리소스에 필요한 권한만 추가. 실행 사용자/서비스 계정의 유형(user/group/serviceAccount)은 실계정에 맞춰야 함.
+
+user01 생성·접속 권한은 실제 IAM 부여 후 점검합니다. `roles/container.admin`, 공유 서브넷 `roles/compute.networkUser`, 노드 SA에 대한 `roles/iam.serviceAccountUser` 등 필요한 범위를 확인해야 하며, **문서에 계정명을 쓰는 것만으로 권한이 생기지는 않습니다.**
+
+~~~bash
+# 권한 작업을 관리자 계정으로 진행했다면 이후 GKE 수행 계정을 되돌림
+gcloud config set account "$EXEC_ACCOUNT"
+gcloud config get-value account
+~~~
 
 ## 4. Host Project 서브넷 (신규 필요할 때만)
 
@@ -121,6 +136,14 @@ gcloud compute networks subnets describe "$CP_SUBNET" \
 ## 5. GKE Autopilot 생성 (승인 후 최초 1회)
 
 ~~~bash
+# 이 단계부터 GKE 작업은 user01 계정으로 실행
+gcloud config set account "$EXEC_ACCOUNT"
+gcloud config get-value account
+~~~
+
+
+
+~~~bash
 # 신규 클러스터 생성: 이미 존재하면 실행하지 않음
 # 승인된 Node/Pod/CP CIDR 및 기존 자원 여부 확인 후만 실행
 gcloud container clusters create-auto "$CLUSTER" \
@@ -143,6 +166,8 @@ gcloud container clusters create-auto "$CLUSTER" \
 - 클러스터 생성이 프로젝트·API·조직 정책으로 실패하면 권한과 quota, GKE Service Agent, Shared VPC 상태를 점검.
 
 ## 6. VM → Private Endpoint 및 kubeconfig 발급
+
+이 과정도 `user01@sonmap.net`으로 수행합니다. Kubeconfig 저장 위치는 명령을 실행하는 **Linux OS 사용자**의 `$HOME`으로 정해지므로 Google 계정 이메일과 OS 홈 디렉터리 이름이 같다고 가정하지 않습니다.
 
 ~~~bash
 mkdir -p "$HOME/.kube"
