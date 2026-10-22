@@ -1,6 +1,20 @@
-# 02. RSVP 단일 과제 전환 검증 (GP_L2RSVP_001_1)
+# 02. 3차 RSVP 단일 과제 전환 검증 (GP_L2RSVP_001_1)
 
-**목표:** 30개 배치 중 RSVP 1개만 GKE Autopilot에 실행. **기존 Cron·client_gke 공통 링크·GKE Standard는 변경하지 않는다.**
+**수행 시점: 1차 인프라 설치 완료 → 2차 AR/NFS/BQ 연동 검증 승인 후.** 현재 실제 전환 대상 환경의 업무 테스트를 할 수 없어 **이 문서는 후속 3차 시험용 절차**로만 유지합니다. 이 단계의 명령을 1차 설치 중에 실행하지 않습니다. 30개 배치 중 RSVP 1개만 GKE Autopilot 시험 대상으로 하며, 기존 Cron·client_gke 공통 링크·GKE Standard는 유지합니다.
+
+## 외부 개발환경 수행 결과와 대상 환경 시험의 구분
+
+| 항목 | 외부 개발환경에서 제공된 자료 | 실제 대상 환경 |
+|---|---|---|
+| 실행 프로그램 | run-gke.sh → client_gke 실행 출력 사례 | 3차 승인 후 직접 호출 |
+| YAML/PV/PVC | created, 20Gi ROX Bound 출력 | 실제 생성/Bound 미검증 |
+| Pod 결과 | Pending → Running → Succeeded 출력 | 실제 업무 Pod 미실행 |
+| 로그 정리 | Pod/PVC/PV 삭제 및 정상 종료 출력 | 운영 자원 삭제 미수행 |
+| BigQuery | .oefj 인증 테스트 코드/출력 참고 | 실제 대상 프로젝트 SQL 시험 미실시 |
+
+**확인 가능한 범위:** 제공 자료에 외부 개발환경에서 수행한 기록이 있다고 보고 기술적 절차를 구성합니다. 단, 출력 일부는 예상 로그 형식이므로 실제 대상 환경 시험 증거로 전용하지 않습니다.
+
+**현재 범위는 [00. 1차 인프라 설치](00-PHASE1-INFRA-INSTALL.md)** 입니다. 아래 명령은 실환경 접속/시험이 가능해지는 시점까지 수행 보류입니다.
 
 ## 0. 사전 승인 및 검증 데이터
 
@@ -37,7 +51,7 @@
 - Kubeconfig 경로가 config_new-autopilot, config_l2comn-autopilot, l2comn_gke 등으로 혼재함. 실행 로그에 명시된 config_l2comn-autopilot을 이 문서의 기본값으로 사용.
 - 신규 smoke 인증은 .oefj. 과거 일부 Python config.py는 .oef이므로 전체 업무 전환 전에는 별도 호환성 확인.
 
-## 1. 실행 VM에서 원본 조사 (읽기 전용)
+## 1. (3차 단계 예정) 실행 VM에서 원본 조사 (읽기 전용)
 
 GKE 접근과 RSVP 1차 검증의 **실제 gcloud 실행 계정은 `user01@sonmap.net`**입니다. IAM 변경은 승인된 관리자 계정이 별도 수행하며, 테스트 중 `admin@sonmap.net`으로 바꾸어 실행하지 않습니다. 이전 실행 로그의 Linux 계정 경로는 역사적 증적이므로 유지합니다.
 
@@ -66,7 +80,7 @@ kubectl auth can-i create persistentvolumeclaims -n "$NS"
 
 **중요:** client_gke는 현재 확보된 자료상 Python(.py)이 아니라 Bash 스크립트임. YAML은 script 내부 here-document로 생성될 수 있음. 실제 소스와 런처가 본 저장소에 없으므로 호출 인자·옵션 지원 여부는 위 조회로 확인해야 함.
 
-## 2. 신규 client-gke-auto 준비 — 공통 링크 변경 금지
+## 2. (3차 단계 예정) 신규 client-gke-auto 준비 — 공통 링크 변경 금지
 
 ~~~bash
 # 현장 운영 담당자가 기존 동작 파일을 바탕으로 복제
@@ -93,7 +107,7 @@ export KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
 - 기존 클러스터 실행 파일을 직접 덮어쓰지 않음.
 - 이미 실행 중인 Cron과 같은 결과 테이블을 동시에 갱신하지 않도록 제한.
 
-## 3. 1차 샘플 Pod 단위 테스트
+## 3. (2차 단계 예정) 샘플 Pod·AR/NFS/BQ 연동 테스트
 
 [01. GKE 생성 가이드](01-GKE-CLUSTER.md) 완료 후 수행.
 
@@ -145,7 +159,7 @@ kubectl delete pvc pvc-rsvp-bq-smoke -n l2comm-batch
 kubectl delete pv pv-rsvp-bq-smoke
 ~~~
 
-## 4. RSVP run-gke.sh → client-gke-auto 연결 테스트
+## 4. (3차 단계 예정) RSVP run-gke.sh → client-gke-auto 연결 테스트
 
 현재 실제 쉘 소스가 저장소에 없어 다음 두 방식 중 **실제 쉘 소스 확인 후 하나 선택**:
 
@@ -173,7 +187,7 @@ export GKE_KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
 
 **주의:** 기존 run-gke.sh가 지원하지 않는 --dry-run이나 CLIENT_GKE 인자를 억지로 적용하지 말 것.
 
-## 5. 실제 RSVP 업무 전환 판정
+## 5. (3차 단계 예정) 실제 RSVP 업무 전환 판정
 
 | 검증 | 확인 | Go 기준 |
 |---|---|---|
@@ -189,7 +203,7 @@ export GKE_KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
 
 샘플 SELECT만으로 업무 SQL 전체가 검증되는 것은 아님. 실제 업무 실행 시 BigQuery APPEND/DROP 권한과 병렬 실행 리스크 별도 검증.
 
-## 6. 전체 과제 절체할 때만: 링크 교체 (1차에서는 금지)
+## 6. (4차 이후) 전체 과제 절체할 때만: 링크 교체 (1차~3차 금지)
 
 **운영 승인을 받고 Cron 신규 시작 중지·기존 실행 작업 확인 후 진행.** 아래 명령은 1차 PoC에서 실행하지 말 것.
 
@@ -218,9 +232,9 @@ readlink -f client_gke
 
 공통 링크 절체는 30개 전체 신규 배치 실행에 영향을 줄 수 있으므로 RSVP만 성공한 상태에서 자동 절체하지 않는다.
 
-## 7. 참고 실행 예 (첨부 기록)
+## 7. 외부 개발환경 참고 실행 예 (첨부 기록)
 
-이는 2026-10-22 첨부 내용의 실행 예이며, 새 GCP 작업을 실제 실행한 결과로 오인해서는 안 됩니다.
+이는 2026-10-22 제공된 외부 개발환경 실행 참고 자료입니다. 실제 전환 대상 환경에서 새로 실행·검증한 결과로 오인해서는 안 됩니다.
 
 ~~~bash
 # 원본 run-gke.sh가 --dry-run을 지원하는 것으로 확인되면 사용
@@ -229,7 +243,7 @@ readlink -f client_gke
 #   0 4 16 /home/jupyter/GP_L2RSVP_001_1/python python bq_auth_smoke.py
 ~~~
 
-| 항목 | 첨부 로그 값 |
+| 항목 | 외부 개발환경 참고 출력값 |
 |---|---|
 | KUBECONFIG (과거 첨부 로그) | /home/admin_sonmap_net/.kube/config_l2comn-autopilot |
 | 이번 실행 사용자 | user01@sonmap.net (Kubeconfig는 현재 Linux 사용자의 $HOME 기준) |
@@ -244,7 +258,7 @@ readlink -f client_gke
 | 정리 | Pod / PVC / PV delete |
 | 배치 반환 | SUCCESS 및 client_gke 정상 종료 (첨부 출력) |
 
-## 8. 증적과 담당
+## 8. 후속 단계에서 확보할 증적과 담당
 
 - GKE: cluster describe, context/endpoint, kubectl nodes/pods/events — 플랫폼 담당
 - AR: ImagePull 결과 및 이미지 태그 — Edge 담당
