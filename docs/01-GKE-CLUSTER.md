@@ -420,6 +420,7 @@ kubectl get pods -A --request-timeout=15s
 
 
 먼저 권한추가
+~~~bash
 export AR_PROJECT="gcp-prod-edp-hub-vpchost"
 export AR_REGION="asia-northeast3"
 export AR_REPOSITORY="ar-l2comm-python"
@@ -447,7 +448,7 @@ gcloud artifacts repositories add-iam-policy-binding \
   --member="serviceAccount:${NODE_SA}" \
   --role="roles/artifactregistry.reader"
 
-
+~~~
 
 외부 개발환경 스모크 테스트의 참고 이미지입니다. 이 단계에서는 실제 대상 환경 Pod Pull을 실행하지 않습니다:
 
