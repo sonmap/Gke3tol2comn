@@ -38,7 +38,7 @@
 | Release Channel | regular |
 | AR Project | gcp-prod-edp-hub-vpchost |
 | 관리 VM (클러스터 접속) | 172.32.10.2 |
-| Kubeconfig (본 문서 표준) | $HOME/.kube/l2comn_gke |
+| Kubeconfig (첨부 실행 로그 기준) | $HOME/.kube/config_l2comn-autopilot |
 | Namespace | l2comm-batch |
 | GKE Pod 마운트 | /home/jupyter |
 | BQ 실행 프로젝트 (운영 예제) | gcp-prod-edp-lake |
