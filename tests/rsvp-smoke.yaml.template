@@ -1,0 +1,72 @@
+# Reviewer note: envsubst renders FILESTORE_IP, NFS_EXPORT, TEST_IMAGE.
+# For FIRST RSVP smoke only; do not apply until variables are approved.
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-rsvp-bq-smoke
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: ""
+  nfs:
+    server: ${FILESTORE_IP}
+    path: ${NFS_EXPORT}
+    readOnly: true
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-rsvp-bq-smoke
+  namespace: l2comm-batch
+spec:
+  accessModes:
+    - ReadWriteMany
+  volumeName: pv-rsvp-bq-smoke
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rsvp-bq-smoke
+  namespace: l2comm-batch
+  labels:
+    app: rsvp-bq-smoke
+    purpose: pre-cutover
+spec:
+  restartPolicy: Never
+  serviceAccountName: ksa-l2comm-batch
+  containers:
+    - name: bq-smoke
+      image: ${TEST_IMAGE}
+      imagePullPolicy: Always
+      command:
+        - /bin/sh
+        - -ec
+      args:
+        - python /home/jupyter/GP_L2RSVP_001_1/python/sample_bq.py
+      env:
+        - name: BQ_KEY_PATH
+          value: /home/jupyter/.oefj
+        - name: PYTHONUNBUFFERED
+          value: "1"
+      resources:
+        requests:
+          cpu: "1"
+          memory: "2Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+      volumeMounts:
+        - name: rsvp-share
+          mountPath: /home/jupyter
+          readOnly: true
+  volumes:
+    - name: rsvp-share
+      persistentVolumeClaim:
+        claimName: pvc-rsvp-bq-smoke
