@@ -417,6 +417,37 @@ kubectl get pods -A --request-timeout=15s
 
 ## 9. Artifact Registry 연동 사전 준비 (실제 Pull은 2차)
 
+--
+먼저 권한추가
+export AR_PROJECT="gcp-prod-edp-hub-vpchost"
+export AR_REGION="asia-northeast3"
+export AR_REPOSITORY="ar-l2comm-python"
+export SVC_PROJECT="gcp-sbx-edp-comn-509423"
+
+export SVC_NUM="$(gcloud projects describe "$SVC_PROJECT" \
+  --format="value(projectNumber)")"
+
+export NODE_SA="${SVC_NUM}-compute@developer.gserviceaccount.com"
+
+# ① user01 — 저장소 조회용
+gcloud artifacts repositories add-iam-policy-binding \
+  "$AR_REPOSITORY" \
+  --project="$AR_PROJECT" \
+  --location="$AR_REGION" \
+  --member="user:user01@sonmap.net" \
+  --role="roles/artifactregistry.reader"
+
+# ② GKE Node SA — 향후 이미지 Pull용
+# 실제 클러스터에 지정한 Node SA와 일치하는지 확인 후 실행
+gcloud artifacts repositories add-iam-policy-binding \
+  "$AR_REPOSITORY" \
+  --project="$AR_PROJECT" \
+  --location="$AR_REGION" \
+  --member="serviceAccount:${NODE_SA}" \
+  --role="roles/artifactregistry.reader"
+
+--
+
 외부 개발환경 스모크 테스트의 참고 이미지입니다. 이 단계에서는 실제 대상 환경 Pod Pull을 실행하지 않습니다:
 
 ~~~bash
