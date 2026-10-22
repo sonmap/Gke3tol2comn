@@ -238,6 +238,32 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 # kubectl get pv,pvc -A
 ~~~
 
+### 8-1. 1차 대체 검증: 관리 VM에서 NFS 마운트 및 /mnt 경로 확인
+
+**실제 GKE Pod에서 Filestore NFS Mount 검증은 현재 수행하지 못합니다.** 위 Filestore 서버·방화벽·PV/PVC 구성 설명은 **그대로 유지**하되, 1차에는 Linux 관리 VM이 실제 NFS Export에 접속할 수 있는지 별도 점검합니다.
+
+- 기존 VM에 NFS가 이미 마운트된 경우: `findmnt -t nfs,nfs4` 및 `findmnt /mnt/batch_gke`로 기존 연결을 확인하고 중복 마운트하지 않습니다.
+- VM NFS 마운트 후보: 서버 Export `/batch_gke` → VM `/mnt/batch_gke` → RSVP `/mnt/batch_gke/l2/rsvp`. 실제 Export가 다르면 경로를 조정해야 합니다.
+- VM 접근 확인 대상: `/mnt/batch_gke/l2/rsvp/GP_L2RSVP_001_1/python`, `/mnt/batch_gke/l2/rsvp/.oefj`(존재·권한만 확인), `/mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh`(같은 Export에 있는 경우).
+- NFS 서버 IP는 운영 담당자가 실주소를 확정해야 합니다. 첨부자료에는 관리 VM과 NFS_SERVER가 동일 IP로 표기되어 혼동이 있으므로 무조건 `172.32.10.2`로 마운트하지 않습니다.
+- 신규 VM 마운트는 먼저 별도 임시 디렉터리에서 **읽기 전용(ro)**으로 확인합니다. 실제 `/mnt/batch_gke` 경로에 기존 로컬 데이터가 있으면 덮거나 가리지 않습니다.
+- **VM NFS 접속 성공은 GKE Node/Pod 접속 성공을 의미하지 않습니다.** GKE 방화벽·PV/PVC·Pod 마운트 및 BigQuery 호출은 후속 2차 검증에서 수행합니다.
+
+<details>
+<summary>VM에서 현재 NFS 상태를 빠르게 확인할 수 있는 명령</summary>
+
+~~~bash
+findmnt -t nfs,nfs4 -o TARGET,SOURCE,FSTYPE,OPTIONS
+findmnt -T /mnt/batch_gke -o TARGET,SOURCE,FSTYPE,OPTIONS
+mountpoint /mnt/batch_gke
+ls -ld /mnt/batch_gke/l2/rsvp
+ls -ld /mnt/batch_gke/l2/rsvp/GP_L2RSVP_001_1/python
+~~~
+
+</details>
+
+임시 NFS 마운트, `/mnt/batch_gke` 정식 적용, 선택적 `fstab`, 진단·증적은 **[04. VM NFS 및 /mnt 마운트 절차](04-VM-NFS-MOUNT.md)**에 정리했습니다. 이 문서의 기존 Filestore/방화벽 요청과 GKE Pod 마운트 절차는 향후 사용을 위해 유지합니다.
+
 Filestore 연결 장애는 Pod Events의 FailedMount, timeout, permission denied로 구분.
 
 ## 9. 1차 인프라 설치 완료조건 (실제 업무 검증 제외)
@@ -247,7 +273,8 @@ Filestore 연결 장애는 Pod Events의 FailedMount, timeout, permission denied
 | 클러스터 | RUNNING, Autopilot enabled |
 | Kubeconfig | 파일/Context 및 Private Endpoint 설정 확인 (kubectl API 통신 검증은 2차) |
 | AR | 실제 AR Repository IAM 정책·이미지 식별 등 **연동 준비** |
-| Filestore | 올바른 NFS 서버/프로토콜/소스 IP와 방화벽 정책 **연동 준비** |
+| Filestore (VM) | 1차에 VM 기준 NFS 마운트·/mnt 경로·접근권한만 확인 가능(실제 수행 시 결과 기록) |
+| Filestore (GKE) | 기존 GKE 연동 설계·FW 요청 유지, Pod Mount/PV/PVC는 2차 미검증 |
 | BQ | SA JSON 키 위치·필요 권한 정리, **실제 SQL 테스트 제외** |
 | Pod | 실제 배포/삭제 미수행 (2~3차 예정) |
 | 운영 | 기존 Cron 및 GKE Standard 유지 |
