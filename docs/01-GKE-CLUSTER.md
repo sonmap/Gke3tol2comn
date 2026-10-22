@@ -165,12 +165,11 @@ gcloud container clusters create-auto "$CLUSTER" \
   --service-account="$NODE_SA" \
   --enable-private-nodes \
   --enable-private-endpoint \
-  --no-enable-authorized-networks-on-private-endpoint \
   --release-channel="$RELEASE_CHANNEL"
 ~~~
 
 - 위 구성은 Private Endpoint 사용. 네트워크 및 관리 VM 라우팅이 확보되어야 함.
-- 첨부 소스는 `--no-enable-authorized-networks-on-private-endpoint`를 사용하여 Private Endpoint 승인 네트워크 제한을 해제합니다. **실행 전 보안팀 승인이 필요**하며 네트워크 도달성과 Kubernetes IAM/RBAC는 계속 분리 통제합니다.
+- 외부 개발환경의 명령에는 `--no-enable-authorized-networks-on-private-endpoint`가 포함되었으나 **1차 설치 기본 명령에는 포함하지 않습니다**. 승인 네트워크 제한 해제가 실제 대상 환경에 필요한 경우 보안팀에서 별도 승인한 뒤 적용합니다. 네트워크 도달성 및 Kubernetes IAM/RBAC는 계속 분리 통제합니다.
 - 서비스용 IP를 수동 관리하는 환경에서는 승인된 Services 범위 및 --services-secondary-range-name 옵션을 추가.
 - 클러스터 생성이 프로젝트·API·조직 정책으로 실패하면 권한과 quota, GKE Service Agent, Shared VPC 상태를 점검.
 
@@ -188,12 +187,14 @@ gcloud container clusters get-credentials "$CLUSTER" \
 kubectl config current-context
 kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
 echo
-kubectl cluster-info --request-timeout=15s
-kubectl get nodes --request-timeout=15s
-kubectl get pods -A --request-timeout=15s
+
+# 2차 시스템 연동 검증 때에만 실제 Kubernetes API/Pod 조회:
+# kubectl cluster-info --request-timeout=15s
+# kubectl get nodes --request-timeout=15s
+# kubectl get pods -A --request-timeout=15s
 ~~~
 
-Kubeconfig는 사용자별 파일이며 소스 저장소 커밋 금지. 연결 실패 시 Endpoint TCP443 도달성 → 인증 플러그인/로그인 → IAM/RBAC 순서로 분리 점검.
+Kubeconfig는 사용자별 파일이며 소스 저장소 커밋 금지. **1차는 인증 설정 및 클러스터의 관리 API 조회 가능 범위까지만** 기록합니다. 실제 Kubernetes API 접속/Pod 동작 검증은 2차에서 수행하며, 연결 실패 시 Endpoint TCP443 도달성 → 인증 플러그인/로그인 → IAM/RBAC 순서로 분리 점검합니다.
 
 ## 7. Artifact Registry 연동 사전 준비 (실제 Pull은 2차)
 
@@ -228,9 +229,9 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 - 이번 **샘플 테스트**의 NFS PV/PVC는 첨부 로그와 맞춰 **20Gi ReadOnlyMany(ROX)**, Pod 마운트는 /home/jupyter/readOnly로 구성합니다. 실제 업무의 쓰기 필요 여부는 별도로 확인합니다.
 
 ~~~bash
-# 서버에서 승인된 경로만 확인:
-ls -ld /mnt/batch_gke/l2/rsvp
-find /mnt/batch_gke/l2/rsvp -maxdepth 1 -name '.oef*' -printf '%f %m %u:%g\n'
+# 실제 Filestore NFS 서버 주소/Export 확인 후, 2차 검증 시에만 실행:
+# ls -ld /mnt/batch_gke/l2/rsvp
+# find /mnt/batch_gke/l2/rsvp -maxdepth 1 -name '.oef*' -printf '%f %m %u:%g\n'
 
 # 2차 시스템 테스트 승인 후(1차 설치 단계에서 실행하지 않음):
 # kubectl describe pod <POD_NAME> -n l2comm-batch
@@ -244,7 +245,7 @@ Filestore 연결 장애는 Pod Events의 FailedMount, timeout, permission denied
 | 항목 | Go 조건 |
 |---|---|
 | 클러스터 | RUNNING, Autopilot enabled |
-| Kubeconfig | Private Endpoint 대상, kubectl 연결 성공 |
+| Kubeconfig | 파일/Context 및 Private Endpoint 설정 확인 (kubectl API 통신 검증은 2차) |
 | AR | 실제 AR Repository IAM 정책·이미지 식별 등 **연동 준비** |
 | Filestore | 올바른 NFS 서버/프로토콜/소스 IP와 방화벽 정책 **연동 준비** |
 | BQ | SA JSON 키 위치·필요 권한 정리, **실제 SQL 테스트 제외** |
