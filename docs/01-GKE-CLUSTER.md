@@ -17,188 +17,395 @@
 
 관리 VM `172.32.10.2`와 원본 실행 로그 NFS_SERVER `172.32.10.2`는 동일 주소로 기록되어 있습니다. 이전 문서에 별도의 Filestore IP가 있었으므로 **NFS 서버 IP는 미확정**입니다. 올바른 NFS 주소를 확인하기 전에는 Pod Mount 테스트를 진행하지 않습니다.
 
-## 1. 기본 파라미터
+## 0. 변수 정의
+
+본 장은 **외부 개발환경 원본의 0~8단계 순서를 복원**한 설치 절차입니다. 신규 터미널에서는 0단계 변수를 다시 선언합니다. 실제 고객 환경에서 명령을 실행하기 전 IP·IAM·보안 정책 승인이 필요하며, 기존 자원이 존재하면 create 명령을 실행하지 않습니다.
 
 ~~~bash
+# ── 프로젝트 ─────────────────────────────────────────────
 export HOST_PROJECT="gcp-prod-edp-hub-vpchost"
 export SVC_PROJECT="gcp-sbx-edp-comn-509423"
-export AR_PROJECT="gcp-prod-edp-hub-vpchost"
+
+# ── 네트워크 ─────────────────────────────────────────────
 export REGION="asia-northeast3"
 export NETWORK="vpc-prod-edp-hub"
-export CLUSTER="gkea-prod-l2comn-batch"
 export NODE_SUBNET="subnet-prod-l2comn-gke"
 export POD_RANGE="subnet-prod-l2comn-gke-pod"
 export CP_SUBNET="subnet-prod-l2comn-gke-cp"
+
+export NODE_CIDR="10.253.0.0/28"  # 총 16 IP, GCP 예약 4개 제외 가용 12
+export POD_CIDR="10.253.1.0/24"   # 256 IP, Pod 256개를 뜻하는 것은 아님
+export CP_CIDR="10.253.2.0/28"    # Private Endpoint 전용
+
+export MGMT_VM_IP="172.32.10.2"
+
+# ── GKE ─────────────────────────────────────────────────
+export CLUSTER="gkea-prod-l2comn-batch"
 export RELEASE_CHANNEL="regular"
 
-# 반드시 IP팀 승인값으로 교체하고 중복성 점검:
-export NODE_CIDR="10.253.0.0/28" # 총 16개, Primary 사용 가능 12개
-export CP_CIDR="10.253.2.0/28"
-export POD_CIDR="10.253.1.0/24" # Pod Secondary 총 256개
-# GKE 생성·검증 및 RSVP 테스트는 user01@sonmap.net으로 수행
+# ── 실행 및 관리자 계정 ──────────────────────────────────
 export EXEC_ACCOUNT="user01@sonmap.net"
-export ADMIN_ACCOUNT="admin@sonmap.net"  # IAM 부여 등 관리자 승인 작업 전용
+export ADMIN_ACCOUNT="admin@sonmap.net"
+export EXEC_USER="user:${EXEC_ACCOUNT}"
+
 gcloud auth list
-gcloud config set account "$EXEC_ACCOUNT"
-test "$(gcloud config get-value account 2>/dev/null)" = "$EXEC_ACCOUNT" || exit 1
-
-export SVC_PROJECT_NUM="$(gcloud projects describe "$SVC_PROJECT" --format='value(projectNumber)')"
-export NODE_SA="$SVC_PROJECT_NUM-compute@developer.gserviceaccount.com"
-export MGMT_VM_IP="172.32.10.2"
-export GKE_AGENT="service-$SVC_PROJECT_NUM@container-engine-robot.iam.gserviceaccount.com"
-
-echo "SVC_PROJECT_NUM=$SVC_PROJECT_NUM"
-~~~
-
-### CIDR 승인 필수
-
-- NODE CIDR: GKE Node Primary(/28 입력값; 총 16개/사용 가능 12개 주소). 과거 /25 표기는 이 문서와 다름.
-- POD CIDR: Pod Secondary 10.253.1.0/24 (첨부 설정값). 사내/타 클라우드 및 연결 네트워크 중복 확인 필수.
-- CP CIDR: Private Endpoint 전용 10.253.2.0/28 서브넷.
-- Services: 최신 Autopilot은 기본적으로 GKE 관리 대역 34.118.224.0/20 사용 가능. 네트워크 정책상 직접 지정해야 한다면 별도 Services Secondary 범위도 승인 후 설정.
-- 기존 서브넷이 있으면 **재생성 금지**. 현재 대역과 네트워크 연결부터 확인.
-
-먼저  4. Host Project 서브넷 (신규 필요할 때만)   실행향,   ##2 가 오류 없다.
-
-## 2. 현재 설정 및 GKE 프로젝트 검증 (읽기 전용)
-
-~~~bash
-gcloud auth list
-gcloud projects describe "$SVC_PROJECT" --format='yaml(projectId,projectNumber)'
-gcloud compute shared-vpc get-host-project "$SVC_PROJECT"
-gcloud compute networks subnets list --project="$HOST_PROJECT" --regions="$REGION"
-gcloud container clusters list --project="$SVC_PROJECT" --region="$REGION"
-gcloud container subnets list-usable --project="$SVC_PROJECT" --network-project="$HOST_PROJECT"
-~~~
-
-이미 클러스터가 존재하면 [03 검증](#5-gke-autopilot-생성-승인-후-최초-1회)에서 무조건 create 명령을 실행하지 않고 설정 비교 단계로 이동.
-
-## 3. API · Shared VPC 권한 (담당자별 작업)
-
-**실제 GKE 실행 계정은 `user01@sonmap.net`**입니다. API 활성화·네트워크 및 IAM 수정은 필요 권한을 가진 담당자만 수행합니다. `admin@sonmap.net`은 권한 부여 등 관리자 작업에만 사용하는 별도 계정이며, GKE 테스트 실행 주체로 대체하지 않습니다. 사용자 계정 및 Node Service Account·GKE Service Agent는 서로 다른 주체입니다.
-
-승인 권한을 가진 담당자가 다음 API가 활성화되었는지 확인한 뒤, 비활성일 경우에만 실행.
-
-~~~bash
-gcloud services enable container.googleapis.com compute.googleapis.com --project="$SVC_PROJECT"
-gcloud beta services identity create --service=container.googleapis.com --project="$SVC_PROJECT"
-~~~
-
-| 주체 | 어디에 권한 부여 | 역할/범위 | 점검 |
-|---|---|---|---|
-| GKE 생성 실행 사용자 | Service Project | roles/container.admin (생성 기간) | clusters.create/get |
-| GKE 생성 실행 사용자 | Host Project Node/CP 서브넷 | roles/compute.networkUser | shared subnet 사용 |
-| 실행 사용자 | Node SA | roles/iam.serviceAccountUser | serviceAccounts.actAs |
-| GKE Service Agent | Host Project | roles/container.hostServiceAgentUser | Shared VPC 구성 |
-| GKE Service Agent | 관련 공유 서브넷 | roles/compute.networkUser | Node/CP 서브넷 접근 |
-| Node SA | Service Project | roles/container.defaultNodeServiceAccount 등 | 노드 기본 동작 |
-| Node SA | 실제 Edge AR 리포지토리 | roles/artifactregistry.reader | 이미지 Pull |
-
-IAM 수정 명령 예시 (Host Project 보안 담당자만, 현행 바인딩 먼저 확인). 관리자 계정으로 변경한 경우 끝나고 user01으로 복귀:
-
-~~~bash
-gcloud projects add-iam-policy-binding "$HOST_PROJECT" \
-  --member="serviceAccount:$GKE_AGENT" \
-  --role="roles/container.hostServiceAgentUser"
-
-gcloud compute networks subnets add-iam-policy-binding "$NODE_SUBNET" \
-  --project="$HOST_PROJECT" --region="$REGION" \
-  --member="serviceAccount:$GKE_AGENT" \
-  --role="roles/compute.networkUser"
-~~~
-
-CP 서브넷도 별도 권한 검토. 별도 Google APIs Service Agent가 필요할 경우 해당 리소스에 필요한 권한만 추가. 실행 사용자/서비스 계정의 유형(user/group/serviceAccount)은 실계정에 맞춰야 함.
-
-user01 생성·접속 권한은 실제 IAM 부여 후 점검합니다. `roles/container.admin`, 공유 서브넷 `roles/compute.networkUser`, 노드 SA에 대한 `roles/iam.serviceAccountUser` 등 필요한 범위를 확인해야 하며, **문서에 계정명을 쓰는 것만으로 권한이 생기지는 않습니다.**
-
-~~~bash
-# 권한 작업을 관리자 계정으로 진행했다면 이후 GKE 수행 계정을 되돌림
 gcloud config set account "$EXEC_ACCOUNT"
 gcloud config get-value account
+
+# ── 프로젝트 번호 자동 조회 ─────────────────────────────
+export SVC_PROJECT_NUM="$(gcloud projects describe "$SVC_PROJECT" \
+  --format='value(projectNumber)')"
+echo "SVC_PROJECT_NUM=${SVC_PROJECT_NUM}"
+if ! [[ "$SVC_PROJECT_NUM" =~ ^[0-9]+$ ]]; then
+  echo "ERROR: 프로젝트 번호 조회 실패 — 진행 중단" >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+# ── Google-managed Service Agents / Node SA ────────────
+export GKE_AGENT="serviceAccount:service-${SVC_PROJECT_NUM}@container-engine-robot.iam.gserviceaccount.com"
+export API_AGENT="serviceAccount:${SVC_PROJECT_NUM}@cloudservices.gserviceaccount.com"
+export NODE_SA="${SVC_PROJECT_NUM}-compute@developer.gserviceaccount.com"
+
+export NETWORK_URI="projects/${HOST_PROJECT}/global/networks/${NETWORK}"
+export NODE_SUBNET_URI="projects/${HOST_PROJECT}/regions/${REGION}/subnetworks/${NODE_SUBNET}"
+export CP_SUBNET_URI="projects/${HOST_PROJECT}/regions/${REGION}/subnetworks/${CP_SUBNET}"
+
+printf '%s\n' "$EXEC_USER" "$GKE_AGENT" "$API_AGENT" "$NODE_SA"
+printf 'NETWORK=%s\nNODE=%s\nCP=%s\n' "$NETWORK_URI" "$NODE_SUBNET_URI" "$CP_SUBNET_URI"
 ~~~
 
-## 4. Host Project 서브넷 (신규 필요할 때만)
+**IP 주의:** Node 10.253.0.0/28은 원본 주석의 128개가 아닌 **16개**입니다. Pod 10.253.1.0/24는 노드별 Pod IP 예약을 고려하면 확장 여력이 작을 수 있으므로 실제 Autopilot 용량 요구에 맞게 승인하십시오. Filestore 방화벽 요청의 Node /25와 현재 /28의 차이도 확인합니다.
+
+## 1. API 활성화 — Service Project
+
+Service Project의 API 활성화 권한을 가진 계정에서 수행합니다. 기존 활성 여부를 조회한 다음 필요한 경우에만 변경합니다.
 
 ~~~bash
-# 관리자: 아래 명령은 실제 자원을 생성합니다. CIDR 승인·변수 검증 후 실행.
-gcloud compute networks subnets create "$NODE_SUBNET" \
-  --project="$HOST_PROJECT" --region="$REGION" \
-  --network="$NETWORK" --range="$NODE_CIDR" \
-  --secondary-range="$POD_RANGE=$POD_CIDR" \
-  --enable-private-ip-google-access
+gcloud services list --enabled --project="$SVC_PROJECT" \
+  --filter="name:(container.googleapis.com OR compute.googleapis.com)"
 
-gcloud compute networks subnets create "$CP_SUBNET" \
+gcloud services enable \
+  container.googleapis.com \
+  compute.googleapis.com \
+  --project="$SVC_PROJECT"
+
+gcloud beta services identity create \
+  --service=container.googleapis.com \
+  --project="$SVC_PROJECT"
+~~~
+
+## 2. 서브넷 생성 — Host Project
+
+Host Project의 네트워크 관리자 권한이 필요합니다. 이미 존재하는 서브넷은 재생성하지 않고 Describe 값이 승인된 IP와 일치하는지 점검합니다.
+
+### 2-1. Node Primary 및 Pod Secondary
+
+~~~bash
+# 먼저 조회 — 없을 때만 승인 후 아래 create 수행
+gcloud compute networks subnets describe "$NODE_SUBNET" \
   --project="$HOST_PROJECT" --region="$REGION" \
-  --network="$NETWORK" --range="$CP_CIDR" \
+  --format="yaml(ipCidrRange,secondaryIpRanges,privateIpGoogleAccess)"
+
+gcloud compute networks subnets create "$NODE_SUBNET" \
+  --project="$HOST_PROJECT" \
+  --region="$REGION" \
+  --network="$NETWORK" \
+  --range="$NODE_CIDR" \
+  --secondary-range="$POD_RANGE=$POD_CIDR" \
   --enable-private-ip-google-access
 ~~~
 
-사전 확인:
+### 2-2. Private Endpoint용 CP 서브넷
+
+~~~bash
+# 먼저 조회 — 없을 때만 승인 후 아래 create 수행
+gcloud compute networks subnets describe "$CP_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --format="yaml(ipCidrRange,privateIpGoogleAccess)"
+
+gcloud compute networks subnets create "$CP_SUBNET" \
+  --project="$HOST_PROJECT" \
+  --region="$REGION" \
+  --network="$NETWORK" \
+  --range="$CP_CIDR" \
+  --enable-private-ip-google-access
+~~~
+
+### 2-3. 생성 결과 확인
 
 ~~~bash
 gcloud compute networks subnets describe "$NODE_SUBNET" \
   --project="$HOST_PROJECT" --region="$REGION" \
-  --format='yaml(ipCidrRange,secondaryIpRanges,privateIpGoogleAccess)'
+  --format="yaml(ipCidrRange,secondaryIpRanges,privateIpGoogleAccess)"
 gcloud compute networks subnets describe "$CP_SUBNET" \
   --project="$HOST_PROJECT" --region="$REGION" \
-  --format='yaml(ipCidrRange,privateIpGoogleAccess)'
+  --format="yaml(ipCidrRange,privateIpGoogleAccess)"
 ~~~
 
-## 5. GKE Autopilot 생성 (승인 후 최초 1회)
+## 3. Shared VPC 연결
+
+Host Project에 Service Project가 이미 연결된 경우 변경 없이 결과만 확인합니다. **Shared VPC 연결은 Compute Shared VPC Admin 권한 등 별도 상위 권한이 필요할 수 있으며, Service Project Owner만으로 충분하지 않습니다.**
 
 ~~~bash
-# 이 단계부터 GKE 작업은 user01 계정으로 실행
+# 현행 상태 확인 (연결되지 않았다면 오류 또는 빈 결과 가능)
+gcloud compute shared-vpc get-host-project "$SVC_PROJECT" \
+  --format="value(name)"
+
+# 미연결 + 승인 및 권한이 있을 때만 실행
+gcloud compute shared-vpc associated-projects add "$SVC_PROJECT" \
+  --host-project="$HOST_PROJECT"
+
+# 기대 값: gcp-prod-edp-hub-vpchost
+gcloud compute shared-vpc get-host-project "$SVC_PROJECT" \
+  --format="value(name)"
+~~~
+
+## 4. IAM 설정
+
+### 4-0. 관리자 계정 전환 및 변수 확인
+
+관리자의 Host Project/Service Project IAM 변경 권한을 각각 확인합니다. 이 명령은 해당 계정이 이미 gcloud에 인증된 경우에만 동작합니다.
+
+~~~bash
+gcloud config set account "$ADMIN_ACCOUNT"
+gcloud config list account
+
+: "${HOST_PROJECT:?0번 변수 정의를 실행하세요}"
+: "${SVC_PROJECT:?0번 변수 정의를 실행하세요}"
+: "${SVC_PROJECT_NUM:?프로젝트 번호 조회를 확인하세요}"
+: "${EXEC_USER:?0번 변수 정의를 실행하세요}"
+: "${GKE_AGENT:?Service Agent 변수 필요}"
+: "${API_AGENT:?Google APIs Agent 변수 필요}"
+~~~
+
+### 4-1. user01 — Node/CP 서브넷 및 Node SA 사용 권한
+
+~~~bash
+gcloud compute networks subnets add-iam-policy-binding "$NODE_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --member="$EXEC_USER" --role="roles/compute.networkUser"
+
+gcloud compute networks subnets add-iam-policy-binding "$CP_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --member="$EXEC_USER" --role="roles/compute.networkUser"
+
+gcloud iam service-accounts add-iam-policy-binding "$NODE_SA" \
+  --project="$SVC_PROJECT" \
+  --member="$EXEC_USER" --role="roles/iam.serviceAccountUser"
+~~~
+
+### 4-2. GKE Service Agent — Host 및 Node/CP 권한
+
+~~~bash
+gcloud projects add-iam-policy-binding "$HOST_PROJECT" \
+  --member="$GKE_AGENT" \
+  --role="roles/container.hostServiceAgentUser" --condition=None
+
+gcloud compute networks subnets add-iam-policy-binding "$NODE_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --member="$GKE_AGENT" --role="roles/compute.networkUser"
+
+gcloud compute networks subnets add-iam-policy-binding "$CP_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --member="$GKE_AGENT" --role="roles/compute.networkUser"
+~~~
+
+Shared VPC 연결 시 GKE Host Service Agent User가 이미 자동 부여되었다면 기존 권한 확인 후 중복 적용하지 않습니다.
+
+### 4-3. Google APIs Service Agent — Node/CP 권한
+
+~~~bash
+gcloud compute networks subnets add-iam-policy-binding "$NODE_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --member="$API_AGENT" --role="roles/compute.networkUser"
+
+gcloud compute networks subnets add-iam-policy-binding "$CP_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --member="$API_AGENT" --role="roles/compute.networkUser"
+~~~
+
+### 4-4. user01 — GKE 생성·관리 권한
+
+~~~bash
+gcloud projects add-iam-policy-binding "$SVC_PROJECT" \
+  --member="$EXEC_USER" \
+  --role="roles/container.admin" --condition=None
+~~~
+
+### 4-5. Node SA 확인 및 기본 운영 권한
+
+~~~bash
+gcloud iam service-accounts describe "$NODE_SA" \
+  --project="$SVC_PROJECT" --format="yaml(email,disabled)"
+
+# Node SA가 존재하고 disabled: false인지 확인한 후 적용
+gcloud projects add-iam-policy-binding "$SVC_PROJECT" \
+  --member="serviceAccount:$NODE_SA" \
+  --role="roles/container.defaultNodeServiceAccount" --condition=None
+~~~
+
+기존 업무 Pod의 .oefj 인증 키와 Node SA는 별개입니다. Node SA의 AR Repository Reader 권한은 뒤의 9단계에 보존했습니다.
+
+## 5. IAM 확인
+
+### 5-1. Node/CP 서브넷 IAM 바인딩
+
+~~~bash
+gcloud compute networks subnets get-iam-policy "$NODE_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --format="yaml(bindings)"
+
+gcloud compute networks subnets get-iam-policy "$CP_SUBNET" \
+  --project="$HOST_PROJECT" --region="$REGION" \
+  --format="yaml(bindings)"
+
+printf '%s\n' "$EXEC_USER" "$GKE_AGENT" "$API_AGENT"
+~~~
+
+### 5-2. user01·GKE Agent·Node SA 권한
+
+~~~bash
+gcloud projects get-iam-policy "$SVC_PROJECT" \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:$EXEC_ACCOUNT" \
+  --format="table(bindings.role)"
+
+gcloud iam service-accounts get-iam-policy "$NODE_SA" \
+  --project="$SVC_PROJECT" --format="yaml(bindings)"
+
+gcloud projects get-iam-policy "$HOST_PROJECT" \
+  --flatten="bindings[].members" \
+  --filter="bindings.members:$GKE_AGENT" \
+  --format="table(bindings.role)"
+~~~
+
+서브넷의 compute.networkUser, Service Project의 container.admin, Node SA의 iam.serviceAccountUser, Host의 container.hostServiceAgentUser를 확인합니다. 상위 프로젝트/조직에서 상속되는 권한은 별도 조회가 필요할 수 있습니다.
+
+## 6. 실행 계정 복귀
+
+~~~bash
 gcloud config set account "$EXEC_ACCOUNT"
-gcloud config get-value account
+gcloud config list account
+
+: "${SVC_PROJECT:?0번 변수 정의를 실행하세요}"
+: "${CLUSTER:?0번 변수 정의를 실행하세요}"
+: "${NETWORK_URI:?0번 변수 정의를 실행하세요}"
+: "${NODE_SUBNET_URI:?0번 변수 정의를 실행하세요}"
+: "${CP_SUBNET_URI:?0번 변수 정의를 실행하세요}"
+
+echo "PROJECT=$SVC_PROJECT"
+echo "CLUSTER=$CLUSTER"
+echo "NETWORK=$NETWORK_URI"
+echo "MGMT_VM_IP=$MGMT_VM_IP"
+echo "ACTIVE_ACCOUNT=$(gcloud config get-value account)"
 ~~~
 
+## 7. 클러스터 생성 또는 설정 변경
 
+클러스터 생성 이전에 IP/Shared VPC/IAM/Quota 및 기존 클러스터 존재 여부를 확인합니다.
+
+### 7-1. 외부 개발환경의 원본 생성 명령 (승인 네트워크 제한 해제 포함)
+
+**원본의 옵션을 누락 없이 보존한 예시**입니다. 승인 네트워크 제한을 해제하므로 실제 전환 대상 환경에서는 보안팀의 명시적인 승인이 있는 경우에만 사용합니다.
 
 ~~~bash
-# 신규 클러스터 생성: 이미 존재하면 실행하지 않음
-# 승인된 Node/Pod/CP CIDR 및 기존 자원 여부 확인 후만 실행
 gcloud container clusters create-auto "$CLUSTER" \
   --project="$SVC_PROJECT" \
   --region="$REGION" \
-  --network="projects/$HOST_PROJECT/global/networks/$NETWORK" \
-  --subnetwork="projects/$HOST_PROJECT/regions/$REGION/subnetworks/$NODE_SUBNET" \
+  --network="$NETWORK_URI" \
+  --subnetwork="$NODE_SUBNET_URI" \
   --cluster-secondary-range-name="$POD_RANGE" \
-  --private-endpoint-subnetwork="projects/$HOST_PROJECT/regions/$REGION/subnetworks/$CP_SUBNET" \
+  --private-endpoint-subnetwork="$CP_SUBNET_URI" \
+  --service-account="$NODE_SA" \
+  --enable-private-nodes \
+  --enable-private-endpoint \
+  --no-enable-authorized-networks-on-private-endpoint \
+  --release-channel="$RELEASE_CHANNEL"
+~~~
+
+### 7-2. 1차 인프라 설치 기본 명령 (제한 해제 옵션 제외)
+
+~~~bash
+# 승인된 신규 클러스터에서만 실행
+gcloud container clusters create-auto "$CLUSTER" \
+  --project="$SVC_PROJECT" \
+  --region="$REGION" \
+  --network="$NETWORK_URI" \
+  --subnetwork="$NODE_SUBNET_URI" \
+  --cluster-secondary-range-name="$POD_RANGE" \
+  --private-endpoint-subnetwork="$CP_SUBNET_URI" \
   --service-account="$NODE_SA" \
   --enable-private-nodes \
   --enable-private-endpoint \
   --release-channel="$RELEASE_CHANNEL"
 ~~~
 
-- 위 구성은 Private Endpoint 사용. 네트워크 및 관리 VM 라우팅이 확보되어야 함.
-- 외부 개발환경의 명령에는 `--no-enable-authorized-networks-on-private-endpoint`가 포함되었으나 **1차 설치 기본 명령에는 포함하지 않습니다**. 승인 네트워크 제한 해제가 실제 대상 환경에 필요한 경우 보안팀에서 별도 승인한 뒤 적용합니다. 네트워크 도달성 및 Kubernetes IAM/RBAC는 계속 분리 통제합니다.
-- 서비스용 IP를 수동 관리하는 환경에서는 승인된 Services 범위 및 --services-secondary-range-name 옵션을 추가.
-- 클러스터 생성이 프로젝트·API·조직 정책으로 실패하면 권한과 quota, GKE Service Agent, Shared VPC 상태를 점검.
+| 옵션 | 의미 |
+|---|---|
+| --enable-private-nodes | Node에 외부 IP 미할당 |
+| --enable-private-endpoint | Control Plane의 외부 IP Endpoint 비활성화 |
+| --no-enable-authorized-networks-on-private-endpoint | 내부 Endpoint Master Authorized Networks CIDR 제한 해제 — 보안 승인 필요 |
+| --private-endpoint-subnetwork | Private Endpoint 배치용 CP 서브넷 |
+| --cluster-secondary-range-name | 기존 Pod Secondary range 이름 |
+| --service-account | Node SA |
+| --release-channel | regular 채널 |
 
-## 6. VM → Private Endpoint 및 kubeconfig 발급
+## 8. Internal IP 접속 확인
 
-이 과정도 `user01@sonmap.net`으로 수행합니다. Kubeconfig 저장 위치는 명령을 실행하는 **Linux OS 사용자**의 `$HOME`으로 정해지므로 Google 계정 이메일과 OS 홈 디렉터리 이름이 같다고 가정하지 않습니다.
+제공 자료상 VM은 172.32.10.2이고 CP 서브넷은 10.253.2.0/28입니다. 실제 전환 대상 환경에서 API 연결 검증이 불가능하면 명령은 보존하되 **미검증**으로 기록합니다.
+
+### 8-1. 클러스터 설정 확인
+
+~~~bash
+gcloud container clusters describe "$CLUSTER" \
+  --project="$SVC_PROJECT" --region="$REGION" \
+  --format="yaml(status,autopilot.enabled,privateClusterConfig,masterAuthorizedNetworksConfig,controlPlaneEndpointsConfig)"
+~~~
+
+예상: RUNNING, Autopilot enabled, Private Endpoint 10.253.2.x, 외부 Endpoint 비활성화. privateEndpointEnforcementEnabled의 값은 7단계에서 최종 선택한 보안 정책에 따라 확인합니다.
+
+### 8-2. kubeconfig 발급
 
 ~~~bash
 mkdir -p "$HOME/.kube"
 chmod 700 "$HOME/.kube"
 export KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
+
 gcloud container clusters get-credentials "$CLUSTER" \
   --project="$SVC_PROJECT" --region="$REGION" --internal-ip
-
-kubectl config current-context
-kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
-echo
-
-# 2차 시스템 연동 검증 때에만 실제 Kubernetes API/Pod 조회:
-# kubectl cluster-info --request-timeout=15s
-# kubectl get nodes --request-timeout=15s
-# kubectl get pods -A --request-timeout=15s
 ~~~
 
-Kubeconfig는 사용자별 파일이며 소스 저장소 커밋 금지. **1차는 인증 설정 및 클러스터의 관리 API 조회 가능 범위까지만** 기록합니다. 실제 Kubernetes API 접속/Pod 동작 검증은 2차에서 수행하며, 연결 실패 시 Endpoint TCP443 도달성 → 인증 플러그인/로그인 → IAM/RBAC 순서로 분리 점검합니다.
+### 8-3. Endpoint 확인
 
-## 7. Artifact Registry 연동 사전 준비 (실제 Pull은 2차)
+~~~bash
+kubectl config current-context
+kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}'
+printf '\n'
+~~~
+
+예상: https://10.253.2.x. 다른 주소가 나올 경우 클러스터 Describe와 Kubeconfig Context를 비교합니다. 기존 kubeconfig는 삭제하지 않습니다.
+
+### 8-4. 네트워크·인증 구분
+
+| 오류 | 우선 점검 |
+|---|---|
+| TCP timeout | VM→Endpoint TCP443 라우팅·방화벽·VPC 연결 |
+| TLS EOF | Private Endpoint 설정, TLS 검사, 프록시 |
+| 403 Forbidden | user01 IAM 및 Kubernetes RBAC |
+| 인증 플러그인 오류 | gke-gcloud-auth-plugin 설치 여부 |
+| Not found | 프로젝트 ID/리전/클러스터명 |
+
+### 8-5. Kubernetes API 읽기 전용 검증 (현재 불가하면 후속 2차 보류)
+
+원본의 확인 명령을 유지합니다. 실제 대상 환경에서 테스트가 불가능하므로 성공으로 기록하지 않습니다.
+
+~~~bash
+kubectl cluster-info --request-timeout=15s
+kubectl get nodes --request-timeout=15s
+kubectl get pods -A --request-timeout=15s
+~~~
+
+## 9. Artifact Registry 연동 사전 준비 (실제 Pull은 2차)
 
 외부 개발환경 스모크 테스트의 참고 이미지입니다. 이 단계에서는 실제 대상 환경 Pod Pull을 실행하지 않습니다:
 
@@ -221,7 +428,7 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 **Node SA의 이미지 Pull 권한과 Pod 내부 .oefj BigQuery 권한은 서로 다릅니다.**
 업무 이미지가 다른 AR 또는 dlk-lguplus-deeplearing-Tags에 있다면 이 명령의 대상 리포지토리를 실제 이름으로 변경.
 
-## 8. Filestore 접근 정책 사전 준비 (실제 NFS Mount는 2차)
+## 10. Filestore 접근 정책 사전 준비 (실제 NFS Mount는 2차)
 
 - 운영 자료에는 NFS_PATH=/batch_gke/l2/rsvp, Pod 마운트=/home/jupyter로 기록되어 있습니다.
 - NFS_SERVER는 실행 로그상 `172.32.10.2`이나 이 주소가 MGMT_VM_IP에도 쓰여 있으므로 Filestore 담당자에게 실제 서버 IP를 필수 재확인. 검증 없이 NFS_SERVER를 MGMT_VM_IP로 대체하지 않음.
@@ -240,7 +447,7 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 # kubectl get pv,pvc -A
 ~~~
 
-### 8-1. 1차 대체 검증: 관리 VM에서 NFS 마운트 및 /mnt 경로 확인
+### 10-1. 1차 대체 검증: 관리 VM에서 NFS 마운트 및 /mnt 경로 확인
 
 **실제 GKE Pod에서 Filestore NFS Mount 검증은 현재 수행하지 못합니다.** 위 Filestore 서버·방화벽·PV/PVC 구성 설명은 **그대로 유지**하되, 1차에는 Linux 관리 VM이 실제 NFS Export에 접속할 수 있는지 별도 점검합니다.
 
@@ -268,7 +475,7 @@ ls -ld /mnt/batch_gke/l2/rsvp/GP_L2RSVP_001_1/python
 
 Filestore 연결 장애는 Pod Events의 FailedMount, timeout, permission denied로 구분.
 
-## 9. 1차 인프라 설치 완료조건 (실제 업무 검증 제외)
+## 11. 1차 인프라 설치 완료조건 (실제 업무 검증 제외)
 
 | 항목 | Go 조건 |
 |---|---|
