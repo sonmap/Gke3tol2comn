@@ -79,7 +79,8 @@ printf 'NETWORK=%s\nNODE=%s\nCP=%s\n' "$NETWORK_URI" "$NODE_SUBNET_URI" "$CP_SUB
 ## 1. API 활성화 — Service Project
 
 Service Project의 API 활성화 권한을 가진 계정에서 수행합니다. 기존 활성 여부를 조회한 다음 필요한 경우에만 변경합니다.
-
+gcloud config set account "$ADMIN_ACCOUNT"
+gcloud config list account
 ~~~bash
 gcloud services list --enabled --project="$SVC_PROJECT" \
   --filter="name:(container.googleapis.com OR compute.googleapis.com)"
@@ -99,7 +100,8 @@ gcloud beta services identity create \
 Host Project의 네트워크 관리자 권한이 필요합니다. 이미 존재하는 서브넷은 재생성하지 않고 Describe 값이 승인된 IP와 일치하는지 점검합니다.
 
 ### 2-1. Node Primary 및 Pod Secondary
-
+gcloud config set account "$ADMIN_ACCOUNT"
+gcloud config list account
 ~~~bash
 # 먼저 조회 — 없을 때만 승인 후 아래 create 수행
 gcloud compute networks subnets describe "$NODE_SUBNET" \
