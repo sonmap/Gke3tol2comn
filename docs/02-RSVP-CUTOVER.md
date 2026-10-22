@@ -14,7 +14,7 @@
 
 **확인 가능한 범위:** 제공 자료에 외부 개발환경에서 수행한 기록이 있다고 보고 기술적 절차를 구성합니다. 단, 출력 일부는 예상 로그 형식이므로 실제 대상 환경 시험 증거로 전용하지 않습니다.
 
-**현재 범위는 [00. 1차 인프라 설치](00-PHASE1-INFRA-INSTALL.md)** 입니다. 아래 명령은 실환경 접속/시험이 가능해지는 시점까지 수행 보류입니다.
+**현재 범위는 [00. 1차 인프라 설치](00-PHASE1-INFRA-INSTALL.md)** 입니다. GKE에서 Filestore NFS 검증을 할 수 없어 1차에는 **[04. VM NFS 마운트 및 /mnt 경로 확인](04-VM-NFS-MOUNT.md)**만 별도로 수행합니다. 아래 Pod·BigQuery 관련 명령은 2~3차 시험 승인까지 수행 보류입니다.
 
 ## 0. 사전 승인 및 검증 데이터
 
@@ -22,7 +22,10 @@
 |---|---|
 | 과제 ID | GP_L2RSVP_001_1 |
 | Cron/VM | 실제 VM/Linux 사용자 확인, GCP 실행 계정은 user01@sonmap.net |
-| 실행 스크립트 | /mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh |
+| 실행 스크립트 | /mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh (VM NFS 마운트/파일 존재 확인 필요) |
+| 1차 VM NFS Mount | /batch_gke → /mnt/batch_gke (Export 확인 후) |
+| 1차 VM RSVP NFS Path | /mnt/batch_gke/l2/rsvp |
+| Pod NFS /home/jupyter | **1차 테스트 불가, 2차 검증 대상** |
 | 기존 실행 클라이언트 | /ssw/dlk/client_gke (Bash) |
 | 신규 검증용 클라이언트 | /ssw/dlk/client-gke-auto (신규 복제/수정) |
 | Kubeconfig | $HOME/.kube/config_l2comn-autopilot (첨부 로그 기준) |
@@ -52,6 +55,8 @@
 - 신규 smoke 인증은 .oefj. 과거 일부 Python config.py는 .oef이므로 전체 업무 전환 전에는 별도 호환성 확인.
 
 ## 1. (3차 단계 예정) 실행 VM에서 원본 조사 (읽기 전용)
+
+**1차에는 VM NFS 마운트·경로 조회만 수행**할 수 있습니다. 경로 확인 후 실제 Pod 실행기 테스트는 3차에서만 진행합니다. 임시 또는 기존 VM 마운트 절차는 [04. VM NFS 검증](04-VM-NFS-MOUNT.md)을 참조하십시오.
 
 GKE 접근과 RSVP 1차 검증의 **실제 gcloud 실행 계정은 `user01@sonmap.net`**입니다. IAM 변경은 승인된 관리자 계정이 별도 수행하며, 테스트 중 `admin@sonmap.net`으로 바꾸어 실행하지 않습니다. 이전 실행 로그의 Linux 계정 경로는 역사적 증적이므로 유지합니다.
 
