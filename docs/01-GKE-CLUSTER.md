@@ -2,26 +2,35 @@
 
 **단계:** 1차 RSVP 단일 과제 PoC. 이 문서는 실행 승인 전 검토본이며 명령이 자동 실행되지 않습니다.
 
+## 운영 입력값과 검증 보류
+
+2026-10-22 첨부 파일을 기준으로 Sandbox Service Project/Host VPC/3개 CIDR/Regular 채널을 반영했습니다. **설정값은 명령의 입력 후보이며 GCP 생성 완료를 의미하지 않습니다.** `/28` Node 대역은 운영 자료 주석의 128개가 아니라 16개 주소이며 4개 예약 후 12개 사용 가능합니다. `/24` Pod CIDR의 노드 수용량도 현재 GKE Autopilot의 노드별 Pod CIDR 크기를 조회해 검증해야 합니다. 클러스터 및 서브넷 기존 존재 여부 확인 후 신규 생성이 필요한 경우에만 create 명령을 승인해 실행합니다.
+
+관리 VM `172.32.10.2`와 원본 실행 로그 NFS_SERVER `172.32.10.2`는 동일 주소로 기록되어 있습니다. 이전 문서에 별도의 Filestore IP가 있었으므로 **NFS 서버 IP는 미확정**입니다. 올바른 NFS 주소를 확인하기 전에는 Pod Mount 테스트를 진행하지 않습니다.
+
 ## 1. 기본 파라미터
 
 ~~~bash
-export HOST_PROJECT="lguplus-edp-hub-prod-vpchost"
-export SVC_PROJECT="gcp-prod-dlk-l2comn"
-export AR_PROJECT="gcp-prod-edp-edge"
+export HOST_PROJECT="gcp-prod-edp-hub-vpchost"
+export SVC_PROJECT="gcp-sbx-edp-comn-509423"
+export AR_PROJECT="gcp-prod-edp-hub-vpchost"
 export REGION="asia-northeast3"
-export NETWORK="edp-hub-shared-prod-01"
+export NETWORK="vpc-prod-edp-hub"
 export CLUSTER="gkea-prod-l2comn-batch"
 export NODE_SUBNET="subnet-prod-l2comn-gke"
 export POD_RANGE="subnet-prod-l2comn-gke-pod"
 export CP_SUBNET="subnet-prod-l2comn-gke-cp"
-export RELEASE_CHANNEL="stable"
+export RELEASE_CHANNEL="regular"
 
 # 반드시 IP팀 승인값으로 교체하고 중복성 점검:
-export NODE_CIDR="REPLACE_WITH_APPROVED_NODE_CIDR"
-export CP_CIDR="REPLACE_WITH_APPROVED_CP_CIDR"
-export POD_CIDR="100.64.128.0/19" # 기존 후보, 확정 아님
+export NODE_CIDR="10.253.0.0/28" # 총 16개, Primary 사용 가능 12개
+export CP_CIDR="10.253.2.0/28"
+export POD_CIDR="10.253.1.0/24" # Pod Secondary 총 256개
 export SVC_PROJECT_NUM="$(gcloud projects describe "$SVC_PROJECT" --format='value(projectNumber)')"
 export NODE_SA="$SVC_PROJECT_NUM-compute@developer.gserviceaccount.com"
+export EXEC_ACCOUNT="chomap@sonmap.net"
+export ADMIN_ACCOUNT="admin@sonmap.net"
+export MGMT_VM_IP="172.32.10.2"
 export GKE_AGENT="service-$SVC_PROJECT_NUM@container-engine-robot.iam.gserviceaccount.com"
 
 echo "SVC_PROJECT_NUM=$SVC_PROJECT_NUM"
@@ -29,9 +38,9 @@ echo "SVC_PROJECT_NUM=$SVC_PROJECT_NUM"
 
 ### CIDR 승인 필수
 
-- NODE CIDR: GKE Node Primary(/25 계획).
-- POD CIDR: Pod Secondary 100.64.128.0/19 후보. 사내/타 클라우드 및 연결 네트워크 중복 확인 필수.
-- CP CIDR: Private Endpoint 전용 별도 Subnet(/28 계획).
+- NODE CIDR: GKE Node Primary(/28 입력값; 총 16개/사용 가능 12개 주소). 과거 /25 표기는 이 문서와 다름.
+- POD CIDR: Pod Secondary 10.253.1.0/24 (첨부 설정값). 사내/타 클라우드 및 연결 네트워크 중복 확인 필수.
+- CP CIDR: Private Endpoint 전용 10.253.2.0/28 서브넷.
 - Services: 최신 Autopilot은 기본적으로 GKE 관리 대역 34.118.224.0/20 사용 가능. 네트워크 정책상 직접 지정해야 한다면 별도 Services Secondary 범위도 승인 후 설정.
 - 기존 서브넷이 있으면 **재생성 금지**. 현재 대역과 네트워크 연결부터 확인.
 
@@ -113,6 +122,7 @@ gcloud compute networks subnets describe "$CP_SUBNET" \
 
 ~~~bash
 # 신규 클러스터 생성: 이미 존재하면 실행하지 않음
+# 승인된 Node/Pod/CP CIDR 및 기존 자원 여부 확인 후만 실행
 gcloud container clusters create-auto "$CLUSTER" \
   --project="$SVC_PROJECT" \
   --region="$REGION" \
@@ -123,11 +133,12 @@ gcloud container clusters create-auto "$CLUSTER" \
   --service-account="$NODE_SA" \
   --enable-private-nodes \
   --enable-private-endpoint \
+  --no-enable-authorized-networks-on-private-endpoint \
   --release-channel="$RELEASE_CHANNEL"
 ~~~
 
 - 위 구성은 Private Endpoint 사용. 네트워크 및 관리 VM 라우팅이 확보되어야 함.
-- Master Authorized Networks / Private Endpoint 승인 네트워크 적용 여부는 보안 팀 정책으로 별도 확정. 임의로 제한을 해제하지 않음.
+- 첨부 소스는 `--no-enable-authorized-networks-on-private-endpoint`를 사용하여 Private Endpoint 승인 네트워크 제한을 해제합니다. **실행 전 보안팀 승인이 필요**하며 네트워크 도달성과 Kubernetes IAM/RBAC는 계속 분리 통제합니다.
 - 서비스용 IP를 수동 관리하는 환경에서는 승인된 Services 범위 및 --services-secondary-range-name 옵션을 추가.
 - 클러스터 생성이 프로젝트·API·조직 정책으로 실패하면 권한과 quota, GKE Service Agent, Shared VPC 상태를 점검.
 
@@ -136,7 +147,7 @@ gcloud container clusters create-auto "$CLUSTER" \
 ~~~bash
 mkdir -p "$HOME/.kube"
 chmod 700 "$HOME/.kube"
-export KUBECONFIG="$HOME/.kube/l2comn_gke"
+export KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
 gcloud container clusters get-credentials "$CLUSTER" \
   --project="$SVC_PROJECT" --region="$REGION" --internal-ip
 
@@ -155,9 +166,9 @@ Kubeconfig는 사용자별 파일이며 소스 저장소 커밋 금지. 연결 �
 이전 스모크 테스트 참고용 이미지:
 
 ~~~bash
-export TEST_IMAGE="asia-northeast3-docker.pkg.dev/gcp-prod-edp-edge/ar-l2comm-python/python-bq-batch:v1"
+export TEST_IMAGE="asia-northeast3-docker.pkg.dev/gcp-prod-edp-hub-vpchost/ar-l2comm-python/python-bq-batch:v1"  # 로그상의 이미지. 1a751e99d693:v1와 대조 필수
 # 실제 RSVP의 운영 이미지는 run-gke.sh 안의 DOCKER_IMAGE/--docker-image 값을 확인 후 사용
-gcloud artifacts docker images list "asia-northeast3-docker.pkg.dev/gcp-prod-edp-edge/ar-l2comm-python" \
+gcloud artifacts docker images list "asia-northeast3-docker.pkg.dev/gcp-prod-edp-hub-vpchost/ar-l2comm-python" \
   --project="$AR_PROJECT" --include-tags
 ~~~
 
@@ -175,8 +186,8 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 
 ## 8. Filestore NFS 검증
 
-- 기존 계획의 Filestore Export는 /batch_gke/l2/rsvp 이며 Pod 내 /home/jupyter 마운트.
-- Filestore IP는 관리 담당자에게 재확인. 공개 저장소에는 실제 사내 IP를 고정하지 않음.
+- 운영 자료에는 NFS_PATH=/batch_gke/l2/rsvp, Pod 마운트=/home/jupyter로 기록되어 있습니다.
+- NFS_SERVER는 실행 로그상 `172.32.10.2`이나 이 주소가 MGMT_VM_IP에도 쓰여 있으므로 Filestore 담당자에게 실제 서버 IP를 필수 재확인. 검증 없이 NFS_SERVER를 MGMT_VM_IP로 대체하지 않음.
 - Host VPC 방화벽과 Filestore 허용 클라이언트 범위 두 군데 확인.
 - NFSv4.1이면 TCP 2049를 확인하고, NFSv3이면 rpcbind/mountd 등 실제 필요한 포트 추가 검토.
 - 방화벽의 소스는 **관리 VM이 아닌 NFS 접속의 실제 Node/Pod 소스 주소**를 확인한 뒤 결정. 방화벽 전체 허용(0.0.0.0/0) 금지.
