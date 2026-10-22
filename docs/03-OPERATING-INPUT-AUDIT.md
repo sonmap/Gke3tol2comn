@@ -36,7 +36,10 @@
 | namespace/KSA | l2comm-batch / ksa-l2comm-batch |
 | 이미지 로그값 | asia-northeast3-docker.pkg.dev/gcp-prod-edp-hub-vpchost/ar-l2comm-python/python-bq-batch:v1 |
 | CPU/MEM/GPU | 4 / 16Gi / 0 |
-| NFS PATH | /batch_gke/l2/rsvp |
+| NFS PATH (향후 Pod) | /batch_gke/l2/rsvp |
+| VM NFS Export Root (확인 필요) | /batch_gke → /mnt/batch_gke |
+| VM RSVP 경로 | /mnt/batch_gke/l2/rsvp |
+| VM 실행기 경로 후보 | /mnt/batch_gke/l2_gke_sh/rsvp/GP_L2RSVP_001_1/run-gke.sh |
 | Pod mount | /home/jupyter |
 | key | /home/jupyter/.oefj |
 | Query test | gcp-prod-edp-lake.DLKUDF.L2MQ_TL_SUBJ_H_TEST |
@@ -55,7 +58,9 @@
 | 중요 | 기존 namespace nms-prd, 신규 l2comm-batch | client/Pod/KSA/RBAC 통일 |
 | 중요 | 예전 테스트 YAML은 100Gi RWX, 이번 로그는 20Gi ROX | 현재 템플릿 20Gi ROX로 보정하되 실제 NFS export 권한 확인 |
 
-## 4. 1차 인프라 설치용 구성 조회 명령 (업무 테스트 아님)
+## 4. 1차 인프라 및 VM NFS 마운트 상태 조회 (GKE Pod 시험 아님)
+
+기존 Filestore/IP 불일치 항목은 유지합니다. GKE Pod에서 NFS 검증이 불가하므로, **VM에서 실제 NFS 서버·Export를 확인한 뒤 NFS 연결 상태와 /mnt 경로를 조회**합니다. 이미 NFS가 연결되어 있다면 재마운트하지 않습니다. 신규 VM 마운트 및 위험 통제는 [04. VM NFS /mnt 가이드](04-VM-NFS-MOUNT.md)를 참조하십시오.
 
 **명령은 `user01@sonmap.net`으로 실행합니다.** 자료의 `admin@sonmap.net`은 IAM 변경 관리자 계정이며 RSVP 시험 실행에는 사용하지 않습니다.
 
@@ -83,6 +88,8 @@ gcloud artifacts docker images list \
 ## kubectl API 연결/Pod 조회는 2차 연동 검증 시 별도 수행:
 # KUBECONFIG="$HOME/.kube/config_l2comn-autopilot" kubectl get pods -n l2comm-batch
 
+findmnt -t nfs,nfs4 -o TARGET,SOURCE,FSTYPE,OPTIONS
+findmnt -T /mnt/batch_gke -o TARGET,SOURCE,FSTYPE,OPTIONS
 ls -ld /mnt/batch_gke/l2/rsvp
 # 2차 검증 승인 후 key_file 유무만 확인 (키 원문 출력 금지):
 # test -s /mnt/batch_gke/l2/rsvp/.oefj && echo "key_file_exists"
@@ -100,7 +107,7 @@ ls -ld /mnt/batch_gke/l2/rsvp
 
 ### 1차 적용 조건
 
-1차는 Shared VPC/IP/IAM/GKE 설치와 구성 기록 확보까지만 수행합니다. 실제 AR Image Pull, Filestore Mount, BQ 인증/SQL 및 RSVP run-gke.sh 검증은 2~3차입니다. 설치 완료했다고 기능 연동이 검증된 것은 아닙니다.
+1차는 Shared VPC/IP/IAM/GKE 설치와 구성 기록 및 **가능한 범위의 VM NFS Mount·/mnt 경로 확인**까지 수행합니다. 실제 GKE Pod의 AR Pull·Filestore Mount, BQ 인증/SQL, RSVP run-gke.sh 실행 검증은 2~3차입니다. **VM NFS 성공은 Pod Filestore 연결 검증 결과로 대체할 수 없습니다.**
 
 ### 적용 조건
 
