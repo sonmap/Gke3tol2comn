@@ -191,7 +191,7 @@ gcloud artifacts repositories add-iam-policy-binding ar-l2comm-python \
 - Host VPC 방화벽과 Filestore 허용 클라이언트 범위 두 군데 확인.
 - NFSv4.1이면 TCP 2049를 확인하고, NFSv3이면 rpcbind/mountd 등 실제 필요한 포트 추가 검토.
 - 방화벽의 소스는 **관리 VM이 아닌 NFS 접속의 실제 Node/Pod 소스 주소**를 확인한 뒤 결정. 방화벽 전체 허용(0.0.0.0/0) 금지.
-- NFS PV ReadWriteMany, PVC 및 Pod의 volumeMounts.mountPath=/home/jupyter에 맞추어 생성.
+- 이번 **샘플 테스트**의 NFS PV/PVC는 첨부 로그와 맞춰 **20Gi ReadOnlyMany(ROX)**, Pod 마운트는 /home/jupyter/readOnly로 구성합니다. 실제 업무의 쓰기 필요 여부는 별도로 확인합니다.
 
 ~~~bash
 # 서버에서 승인된 경로만 확인:
