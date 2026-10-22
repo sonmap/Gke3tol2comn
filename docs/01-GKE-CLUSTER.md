@@ -193,6 +193,9 @@ gcloud compute networks subnets add-iam-policy-binding "$CP_SUBNET" \
   --project="$HOST_PROJECT" --region="$REGION" \
   --member="$EXEC_USER" --role="roles/compute.networkUser"
 
+
+SVC_PROJECT 오너계정으로 수행
+
 gcloud iam service-accounts add-iam-policy-binding "$NODE_SA" \
   --project="$SVC_PROJECT" \
   --member="$EXEC_USER" --role="roles/iam.serviceAccountUser"
