@@ -1,7 +1,7 @@
-# 03. 2026-10-22 운영 입력값 대조표
+# 03. 2026-10-22 외부 개발환경 입력값 대조표
 
-이 문서는 사용자가 제공한 Pasted text(20261022-100920).txt를 기준으로 작성했으며, 이후 요청에 따라 **GKE 생성·조회·RSVP 실행 계정을 `user01@sonmap.net`으로 통일**했습니다.
-문서 작성만 진행했으며 GCP 자원 생성·변경 또는 운영 배치 실행은 수행하지 않았습니다.
+이 문서는 사용자가 제공한 외부 개발환경 설치/RSVP 테스트 자료(Pasted text(20261022-103357).txt 등)를 기준으로 작성했으며, 변경 지시에 따라 **GKE 생성·조회 실행 계정을 user01@sonmap.net으로 통일**했습니다. RSVP 실제 배치 시험은 1차에서 제외하고 3차로 연기했습니다.
+이번 작업은 1차 인프라 설치 계획 수정이며 GCP 자원 생성·변경 또는 실제 전환 대상 환경 배치 실행은 수행하지 않았습니다. 첨부 문서의 실행 로그는 외부 개발환경 참고 결과로 분류합니다.
 
 ## 1. 원본 설정표
 
@@ -24,7 +24,7 @@
 | ADMIN_ACCOUNT | admin@sonmap.net | IAM 변경 주체 |
 | Node SA | SVC_PROJECT_NUM-compute@developer.gserviceaccount.com | 실제 사용 SA 확인 |
 
-## 2. RSVP 단일 과제 관련 값
+## 2. 외부 개발환경 RSVP 단일 과제 관련 값 (후속 2~3차 참고)
 
 | 항목 | 첨부 출력 |
 |---|---|
@@ -41,7 +41,7 @@
 | key | /home/jupyter/.oefj |
 | Query test | gcp-prod-edp-lake.DLKUDF.L2MQ_TL_SUBJ_H_TEST |
 | PVC 예시 | 20Gi, ROX, Bound |
-| 종료 로그 | Pending → Running → Succeeded, 삭제 완료 (제공 예시) |
+| 종료 로그 | Pending → Running → Succeeded, 삭제 완료 (외부 개발환경 제공 출력. 실제 대상 환경 미검증) |
 
 ## 3. 불일치 및 사전 검증 의무
 
@@ -55,7 +55,7 @@
 | 중요 | 기존 namespace nms-prd, 신규 l2comm-batch | client/Pod/KSA/RBAC 통일 |
 | 중요 | 예전 테스트 YAML은 100Gi RWX, 이번 로그는 20Gi ROX | 현재 템플릿 20Gi ROX로 보정하되 실제 NFS export 권한 확인 |
 
-## 4. 현장 검증 명령 (읽기 전용)
+## 4. 1차 인프라 설치용 구성 조회 명령 (업무 테스트 아님)
 
 **명령은 `user01@sonmap.net`으로 실행합니다.** 자료의 `admin@sonmap.net`은 IAM 변경 관리자 계정이며 RSVP 시험 실행에는 사용하지 않습니다.
 
@@ -80,10 +80,12 @@ gcloud artifacts docker images list \
   asia-northeast3-docker.pkg.dev/gcp-prod-edp-hub-vpchost/ar-l2comm-python \
   --project=gcp-prod-edp-hub-vpchost --include-tags
 
-KUBECONFIG="$HOME/.kube/config_l2comn-autopilot" kubectl get pods -n l2comm-batch
+## kubectl API 연결/Pod 조회는 2차 연동 검증 시 별도 수행:
+# KUBECONFIG="$HOME/.kube/config_l2comn-autopilot" kubectl get pods -n l2comm-batch
 
 ls -ld /mnt/batch_gke/l2/rsvp
-test -s /mnt/batch_gke/l2/rsvp/.oefj && echo "key_file_exists"
+# 2차 검증 승인 후 key_file 유무만 확인 (키 원문 출력 금지):
+# test -s /mnt/batch_gke/l2/rsvp/.oefj && echo "key_file_exists"
 ~~~
 
 ## 5. 통신 및 권한 주체
@@ -95,6 +97,10 @@ test -s /mnt/batch_gke/l2/rsvp/.oefj && echo "key_file_exists"
 | GKE Node → AR | 실제 Node SA / AR repository Reader |
 | GKE → Filestore | Host Project FW 및 Filestore 허용 네트워크 (실제 패킷 Source 확인) |
 | Pod Python → BigQuery | JSON key의 SA / Job 실행 권한 + 테스트 테이블 읽기 |
+
+### 1차 적용 조건
+
+1차는 Shared VPC/IP/IAM/GKE 설치와 구성 기록 확보까지만 수행합니다. 실제 AR Image Pull, Filestore Mount, BQ 인증/SQL 및 RSVP run-gke.sh 검증은 2~3차입니다. 설치 완료했다고 기능 연동이 검증된 것은 아닙니다.
 
 ### 적용 조건
 
