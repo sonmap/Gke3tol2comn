@@ -38,6 +38,8 @@
 | Release Channel | regular |
 | AR Project | gcp-prod-edp-hub-vpchost |
 | 관리 VM (클러스터 접속) | 172.32.10.2 |
+| GKE 생성·조회·RSVP 실행 계정 | user01@sonmap.net |
+| 관리자 IAM 변경 계정 | admin@sonmap.net (별도, 필요할 때만) |
 | Kubeconfig (첨부 실행 로그 기준) | $HOME/.kube/config_l2comn-autopilot |
 | Namespace | l2comm-batch |
 | GKE Pod 마운트 | /home/jupyter |
@@ -51,6 +53,19 @@
 - 실제 RSVP 업무 컨테이너 이미지와 인자 형식은 운영 VM의 run-gke.sh를 조회해 확정합니다.
 - 이전 실행 로그의 python-bq-batch:v1는 인증 스모크 테스트 이미지이며 실제 RSVP 업무 이미지와 혼동하지 않습니다.
 - 기존 Python config.py 중 일부는 /home/jupyter/.oef를 사용합니다. 신규 스모크는 /home/jupyter/.oefj를 기본으로 하며 반드시 실경로를 확인합니다.
+
+## 실행 계정 통일
+
+GKE 클러스터 생성, kubeconfig 발급, `kubectl` 및 RSVP 단일 과제 시험은 **`user01@sonmap.net`**으로 수행합니다. 필요한 IAM 권한은 관리자 `admin@sonmap.net`이 부여합니다.
+
+~~~bash
+gcloud auth list
+gcloud config set account user01@sonmap.net
+gcloud config get-value account
+export KUBECONFIG="$HOME/.kube/config_l2comn-autopilot"
+~~~
+
+`$HOME`은 **Linux OS 사용자 홈 디렉터리**입니다. Google 계정이 user01이라고 OS 사용자 이름도 user01인 것은 아니므로, 이전 로그의 `/home/admin_sonmap_net` 경로를 기계적으로 바꾸지 않습니다.
 
 ## 중요: 1차 단계에서 변경하지 말 것
 
