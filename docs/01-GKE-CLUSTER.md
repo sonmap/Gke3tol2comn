@@ -106,6 +106,7 @@ gcloud compute networks subnets describe "$NODE_SUBNET" \
   --project="$HOST_PROJECT" --region="$REGION" \
   --format="yaml(ipCidrRange,secondaryIpRanges,privateIpGoogleAccess)"
 
+# 생성 승인·기존 서브넷 미존재 확인 후에만 실행
 gcloud compute networks subnets create "$NODE_SUBNET" \
   --project="$HOST_PROJECT" \
   --region="$REGION" \
@@ -123,6 +124,7 @@ gcloud compute networks subnets describe "$CP_SUBNET" \
   --project="$HOST_PROJECT" --region="$REGION" \
   --format="yaml(ipCidrRange,privateIpGoogleAccess)"
 
+# 생성 승인·기존 서브넷 미존재 확인 후에만 실행
 gcloud compute networks subnets create "$CP_SUBNET" \
   --project="$HOST_PROJECT" \
   --region="$REGION" \
@@ -323,7 +325,9 @@ gcloud container clusters create-auto "$CLUSTER" \
   --release-channel="$RELEASE_CHANNEL"
 ~~~
 
-### 7-2. 1차 인프라 설치 기본 명령 (제한 해제 옵션 제외)
+### 7-2. 1차 인프라 설치 검토용 명령 (원본의 제한 해제 옵션 제외)
+
+**7-1과 7-2는 동일 클러스터에 대한 대안 명령입니다. 절대로 연속 실행하지 않습니다.** 이 예시는 단순히 원본의 제한 해제 옵션을 제외한 것으로, **Master Authorized Networks 강제 적용을 자동으로 보장하지 않습니다.** 조직 보안 정책에서 Private Endpoint CIDR 제한을 요구할 경우 승인된 CIDR과 함께 `--enable-master-authorized-networks`, `--enable-authorized-networks-on-private-endpoint` 등 적합한 옵션을 별도 검토해야 합니다. 특히 관리 VM 단일 `/32`를 임의로 허용 목록에 넣지 않고 네트워크팀의 승인 대역을 확인합니다.
 
 ~~~bash
 # 승인된 신규 클러스터에서만 실행
