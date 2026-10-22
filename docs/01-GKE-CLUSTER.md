@@ -326,6 +326,7 @@ gcloud container clusters create-auto "$CLUSTER" \
   --service-account="$NODE_SA" \
   --enable-private-nodes \
   --enable-private-endpoint \
+  --enable-master-authorized-networks \
   --no-enable-authorized-networks-on-private-endpoint \
   --release-channel="$RELEASE_CHANNEL"
 ~~~
