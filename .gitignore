@@ -1,0 +1,23 @@
+# Security: DO NOT commit service account JSON keys or kubeconfigs
+.oef
+.oefj
+**/.oef
+**/.oefj
+*.service-account.json
+*service-account-key*.json
+kubeconfig*
+**/.kube/
+*.pem
+*.key
+.env
+.env.*
+!.env.example
+
+# Temporary manifests may contain internal addresses
+tmp/
+*.rendered.yaml
+rsvp-smoke.yaml
+*.log
+__pycache__/
+*.pyc
+.DS_Store
