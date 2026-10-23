@@ -186,9 +186,8 @@ gcloud config list account
 
 ~~~bash
 
-
 gcloud projects add-iam-policy-binding "$HOST_PROJECT" \
-  --member="user:${EXEC_USER}" \
+  --member="$EXEC_USER" \
   --role="roles/compute.networkViewer" \
   --condition=None
 
