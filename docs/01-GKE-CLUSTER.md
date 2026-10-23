@@ -185,6 +185,13 @@ gcloud config list account
 ### 4-1. user01 — Node/CP 서브넷 및 Node SA 사용 권한
 
 ~~~bash
+
+
+gcloud projects add-iam-policy-binding "$HOST_PROJECT" \
+  --member="user:$EXEC_USER" \
+  --role="roles/compute.networkViewer"
+
+
 gcloud compute networks subnets add-iam-policy-binding "$NODE_SUBNET" \
   --project="$HOST_PROJECT" --region="$REGION" \
   --member="$EXEC_USER" --role="roles/compute.networkUser"
