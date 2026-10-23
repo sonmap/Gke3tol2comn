@@ -85,6 +85,34 @@ gcloud config list account
 gcloud services list --enabled --project="$SVC_PROJECT" \
   --filter="name:(container.googleapis.com OR compute.googleapis.com)"
 
+3. 누락된 GKE Service Agent 역할 복구
+gcloud config set account admin@sonmap.net
+export HOST_NUM="$(gcloud projects describe "$HOST_PROJECT" \
+  --format='value(projectNumber)')"
+
+export SVC_NUM="$(gcloud projects describe "$SVC_PROJECT" \
+  --format='value(projectNumber)')"
+
+export HOST_GKE_AGENT="serviceAccount:service-${HOST_NUM}@container-engine-robot.iam.gserviceaccount.com"
+export SVC_GKE_AGENT="serviceAccount:service-${SVC_NUM}@container-engine-robot.iam.gserviceaccount.com"
+
+echo "HOST_NUM=$HOST_NUM"
+echo "HOST_GKE_AGENT=$HOST_GKE_AGENT"
+echo "SVC_GKE_AGENT=$SVC_GKE_AGENT"
+우선 서비스 에이전트가 존재하는지 확인합니다. 존재하지 않으면 관리자 권한으로 서비스 ID 생성을 시도할 수 있습니다.
+gcloud beta services identity create \
+  --service=container.googleapis.com \
+  --project="$HOST_PROJECT"
+
+
+이후 Host Project의 GKE Service Agent에 원래 역할을 복구합니다.
+gcloud projects add-iam-policy-binding "$HOST_PROJECT" \
+  --member="$HOST_GKE_AGENT" \
+  --role="roles/container.serviceAgent" \
+  --condition=None
+
+
+
 gcloud services enable \
   container.googleapis.com \
   compute.googleapis.com \
