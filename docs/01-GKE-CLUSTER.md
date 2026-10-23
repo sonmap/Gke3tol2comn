@@ -188,8 +188,9 @@ gcloud config list account
 
 
 gcloud projects add-iam-policy-binding "$HOST_PROJECT" \
-  --member="user:$EXEC_USER" \
-  --role="roles/compute.networkViewer"
+  --member="user:${EXEC_USER}" \
+  --role="roles/compute.networkViewer" \
+  --condition=None
 
 
 gcloud compute networks subnets add-iam-policy-binding "$NODE_SUBNET" \
