@@ -239,7 +239,10 @@ envsubst '${FILESTORE_IP} ${NFS_EXPORT} ${TEST_IMAGE}' \
 grep -nE 'server:|path:|image:|sample_bq.py|BQ_KEY_PATH' \
   /tmp/rsvp-smoke-rendered.yaml
 # 아래 명령은 아무 행도 출력하지 않아야 정상
-grep -n '${' /tmp/rsvp-smoke-rendered.yaml || true
+if grep -Fn '${' /tmp/rsvp-smoke-rendered.yaml; then
+  echo 'ERROR: 미치환 환경변수 존재 — 적용 중단'
+  exit 1
+fi
 kubectl apply --dry-run=server -f /tmp/rsvp-smoke-rendered.yaml
 ~~~
 
@@ -298,7 +301,7 @@ kubectl get pod rsvp-bq-smoke -n "$NS" \
   -o jsonpath='phase={.status.phase}{"\n"}exitCode={.status.containerStatuses[0].state.terminated.exitCode}{"\n"}reason={.status.containerStatuses[0].state.terminated.reason}{"\n"}'
 
 # Pending/Error이면 최근 Events 확인
-kubectl describe pod rsvp-bq-smoke -n "$NS" | sed -n '/Events:/$p'
+kubectl describe pod rsvp-bq-smoke -n "$NS" | sed -n '/Events:/,$p'
 ~~~
 
 `sample_bq.py` 성공 기준: 로그에 `[SUCCESS] BQ SELECT job_id=...`가 표시되고 `phase=Succeeded`, `exitCode=0`인 경우. `Completed`는 스크립트가 종료되었다는 뜻이며 **RSVP 본업무 SQL 및 Cron 전환 성공의 증거는 아니다**. 본 스크립트는 쿼리 최대 청구 바이트를 100MiB로 제한하지만 비용이 발생할 수 있다.
